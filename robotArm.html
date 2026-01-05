@@ -1,57 +1,91 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WebGL Robotic Arm – Controls</title>
+</head>
+
 <body>
 
-<div>
-body angle -180 <input id="slider1" type="range"
- min="-180" max="180" step="10" value="0"
-  />
- 180
-</div><br/>
+  <header>
+    <h2>WebGL Robotic Arm</h2>
+    <p>Use sliders or keyboard to control joints and gripper.</p>
+  </header>
 
-<div>
-lower arm angle -180 <input id="slider2" type="range"
- min="-180" max="180" step="10" value="0"
-  />
- 180
-</div><br/>
+  <main>
+    <!-- Controls -->
+    <section aria-labelledby="controls-title">
+      <h3 id="controls-title">Controls</h3>
 
-<div>
-upper arm angle -180 <input id="slider3" type="range"
- min="-180" max="180" step="10" value="0"
-  />
- 180
-</div><br/>
+      <fieldset>
+        <legend>Joint Angles</legend>
 
-<div>
-gripper open (0=close) <input id="slider4" type="range"
- min="0" max="100" step="1" value="100"
-  />
- 100 (open)
-</div><br/>
+        <p>
+          <label for="slider1">Body angle (-180 to 180):</label><br />
+          <input id="slider1" type="range" min="-180" max="180" step="10" value="0" />
+          <output id="out1">0</output>°
+        </p>
 
-<div style="font-family: monospace; font-size: 12px; line-height: 1.4;">
-  Keys:<br/>
-  Q/A = Base (10° / 1° precision)<br/>
-  W/S = Main arm<br/>
-  L/D = Forearm<br/>
-  R/F = Grip<br/>
-  G = Record mode<br/>
-  X or Space = Save position<br/>
-  P = Play mode (loop)<br/>
-  CAPS LOCK = Precision mode<br/>
-  + / - = Change movement speed
-</div><br/>
+        <p>
+          <label for="slider2">Lower arm angle (-180 to 180):</label><br />
+          <input id="slider2" type="range" min="-180" max="180" step="10" value="0" />
+          <output id="out2">0</output>°
+        </p>
 
+        <p>
+          <label for="slider3">Upper arm angle (-180 to 180):</label><br />
+          <input id="slider3" type="range" min="-180" max="180" step="10" value="0" />
+          <output id="out3">0</output>°
+        </p>
+      </fieldset>
 
-<div id="status" style="margin:10px 0; font-family: monospace;">
-  Ready.
-</div>
+      <fieldset>
+        <legend>Gripper</legend>
 
-<canvas id="gl-canvas" width="512" height="512"> </canvas>
-<script id="vertex-shader" type="x-shader/x-vertex">
+        <p>
+          <label for="slider4">Gripper open (0 = close, 100 = open):</label><br />
+          <input id="slider4" type="range" min="0" max="100" step="1" value="100" />
+          <output id="out4">100</output>
+        </p>
+      </fieldset>
+    </section>
+
+    <!-- Keyboard help -->
+    <section aria-labelledby="keys-title">
+      <h3 id="keys-title">Keyboard Shortcuts</h3>
+
+      <ul>
+        <li><b>Q / A</b> = Base (10° / 1° precision)</li>
+        <li><b>W / S</b> = Main arm</li>
+        <li><b>L / D</b> = Forearm</li>
+        <li><b>R / F</b> = Grip</li>
+        <li><b>G</b> = Record mode</li>
+        <li><b>X</b> or <b>Space</b> = Save position</li>
+        <li><b>P</b> = Play mode (loop)</li>
+        <li><b>Caps Lock</b> = Precision mode</li>
+        <li><b>+</b> / <b>-</b> = Change movement speed</li>
+      </ul>
+    </section>
+
+    <!-- Status -->
+    <section aria-labelledby="status-title">
+      <h3 id="status-title">Status</h3>
+      <div id="status" role="status" aria-live="polite">Ready.</div>
+    </section>
+
+    <!-- Canvas -->
+    <section aria-labelledby="view-title">
+      <h3 id="view-title">Viewport</h3>
+      <canvas id="gl-canvas" width="512" height="512">
+        Your browser does not support the HTML canvas element.
+      </canvas>
+    </section>
+  </main>
+
+  <!-- Shaders -->
+  <script id="vertex-shader" type="x-shader/x-vertex">
 #version 300 es
-
 in vec4 aPosition;
 in vec4 aColor;
 out vec4 vColor;
@@ -64,11 +98,10 @@ void main()
     vColor = aColor;
     gl_Position = projectionMatrix * modelViewMatrix * aPosition;
 }
-</script>
+  </script>
 
-<script id="fragment-shader" type="x-shader/x-fragment">
+  <script id="fragment-shader" type="x-shader/x-fragment">
 #version 300 es
-
 precision mediump float;
 
 in vec4 vColor;
@@ -78,12 +111,29 @@ void main()
 {
     fColor = vColor;
 }
-</script>
+  </script>
 
-<script src="../Common/initShaders.js"></script>
-<script src="../Common/MVnew.js"></script>
-<script src="robotArm.js"></script>
+  <!-- Scripts -->
+  <script src="../Common/initShaders.js"></script>
+  <script src="../Common/MVnew.js"></script>
+  <script src="robotArm.js"></script>
 
+  <!-- Small UX helper (no CSS): show slider values beside outputs -->
+  <script>
+    (function () {
+      function bind(sliderId, outputId) {
+        var s = document.getElementById(sliderId);
+        var o = document.getElementById(outputId);
+        if (!s || !o) return;
+        o.value = s.value;
+        s.addEventListener("input", function () { o.value = s.value; });
+      }
+      bind("slider1", "out1");
+      bind("slider2", "out2");
+      bind("slider3", "out3");
+      bind("slider4", "out4");
+    })();
+  </script>
 
 </body>
 </html>
