@@ -485,21 +485,21 @@ function init() {
     switch (k.toLowerCase()) {
 
       // Q,A -> Move base (per your spec)
-      case "q": addTargetAngle(Base, +baseStep); break;
-      case "a": addTargetAngle(Base, -baseStep); break;
+      case "a": addTargetAngle(Base, +baseStep); break;
+      case "d": addTargetAngle(Base, -baseStep); break;
 
       // W,S -> Move main arm (LowerArm)
       case "s": addTargetAngle(LowerArm, +armStep); break;
       case "w": addTargetAngle(LowerArm, -armStep); break;
 
-      // E,D -> Move forearm (UpperArm)
-      case "d": addTargetAngle(UpperArm, +armStep); break;
-      case "e": addTargetAngle(UpperArm, -armStep); break;
+      // F,R -> Move forearm (UpperArm)
+      case "f": addTargetAngle(UpperArm, +armStep); break;
+      case "r": addTargetAngle(UpperArm, -armStep); break;
 
-      // R,F -> Move grip (open/close gap)
-      // (R = open, F = close)
-      case "r": addGripTarget(+gStep); motionStatus("Grip opening"); break;
-      case "f": addGripTarget(-gStep); motionStatus("Grip closing"); break;
+      // O,P -> Move grip (open/close gap)
+      // (O = open, P = close)
+      case "o": addGripTarget(+gStep); motionStatus("Grip opening"); break;
+      case "p": addGripTarget(-gStep); motionStatus("Grip closing"); break;
 
       // G -> Record Mode
       case "g": toggleRecordMode(); break;
@@ -515,8 +515,8 @@ function init() {
         savePose();
         break;
 
-      // P -> Play mode loop
-      case "p":
+      // V -> Play mode loop
+      case "v":
         if (playMode) stopPlayMode();
         else startPlayMode();
         break;
