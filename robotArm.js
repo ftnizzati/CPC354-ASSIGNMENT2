@@ -371,8 +371,32 @@ function motionStatus(msg) {
   if (el) el.textContent = line;
 }
 
+//--------------------------------------------------
 
+function setInitialPose(baseDeg, lowerDeg, upperDeg, gripGap) {
+  // Set both current + target so it doesn't animate from 0
+  theta[Base] = targetTheta[Base] = baseDeg;
+  theta[LowerArm] = targetTheta[LowerArm] = lowerDeg;
+  theta[UpperArm] = targetTheta[UpperArm] = upperDeg;
 
+  grip.open = grip.targetOpen = gripGap;
+
+  // Sync sliders if they exist
+  var s1 = document.getElementById("slider1");
+  var s2 = document.getElementById("slider2");
+  var s3 = document.getElementById("slider3");
+  var s4 = document.getElementById("slider4");
+
+  if (s1) s1.value = baseDeg;
+  if (s2) s2.value = lowerDeg;
+  if (s3) s3.value = upperDeg;
+
+  if (s4) {
+    // slider4 is 0..100, convert from gap to percent
+    var pct = ((gripGap - grip.min) / (grip.max - grip.min)) * 100;
+    s4.value = clamp(pct, 0, 100);
+  }
+}
 
 //--------------------------------------------------
 
@@ -389,9 +413,7 @@ function init() {
     gl.clearColor( 1.0, 1.0, 1.0, 1.0 );
     gl.enable( gl.DEPTH_TEST );
 
-    //
     //  Load shaders and initialize attribute buffers
-    //
     program = initShaders( gl, "vertex-shader", "fragment-shader" );
 
     gl.useProgram( program );
@@ -441,13 +463,11 @@ function init() {
     projectionMatrix = ortho(-10, 10, -10, 10, -10, 10);
     gl.uniformMatrix4fv( gl.getUniformLocation(program, "projectionMatrix"),  false, flatten(projectionMatrix) );
 
-    render();
+    setInitialPose(75, 35, 90, 0.55);
+    motionStatus("Lower Arm rotated to initial pose");
 
-    // Keyboard controls:
-    // Base:   A (left), D (right)
-    // Lower:  W (up),   S (down)
-    // Upper:  Q (up),   E (down)
-    // Reset:  R
+    render();
+    
     window.addEventListener("keydown", function (e) {
     var k = e.key;
 
@@ -469,12 +489,12 @@ function init() {
       case "a": addTargetAngle(Base, -baseStep); break;
 
       // W,S -> Move main arm (LowerArm)
-      case "w": addTargetAngle(LowerArm, +armStep); break;
-      case "s": addTargetAngle(LowerArm, -armStep); break;
+      case "s": addTargetAngle(LowerArm, +armStep); break;
+      case "w": addTargetAngle(LowerArm, -armStep); break;
 
       // E,D -> Move forearm (UpperArm)
-      case "e": addTargetAngle(UpperArm, +armStep); break;
-      case "d": addTargetAngle(UpperArm, -armStep); break;
+      case "d": addTargetAngle(UpperArm, +armStep); break;
+      case "e": addTargetAngle(UpperArm, -armStep); break;
 
       // R,F -> Move grip (open/close gap)
       // (R = open, F = close)
@@ -548,22 +568,13 @@ function base() {
 
 function upperArm() {
     var s = scale(UPPER_ARM_WIDTH, UPPER_ARM_HEIGHT, UPPER_ARM_WIDTH);
-    //console.log("s", s);
 
     var instanceMatrix = mult(translate( 0.0, 0.5 * UPPER_ARM_HEIGHT, 0.0 ),s);
-    //var instanceMatrix = mult(s, translate(  0.0, 0.5 * UPPER_ARM_HEIGHT, 0.0 ));
-
-    //console.log("instanceMatrix", instanceMatrix);
 
     var t = mult(modelViewMatrix, instanceMatrix);
 
-    //console.log("upper arm mv", modelViewMatrix);
-
     gl.uniformMatrix4fv( modelViewMatrixLoc,  false, flatten(t)  );
     gl.drawArrays( gl.TRIANGLES, 0, NumVertices );
-
-    //console.log("upper arm t", t);
-
 }
 
 //----------------------------------------------------------------------------
@@ -571,13 +582,13 @@ function upperArm() {
 
 function lowerArm()
 {
-    var s = scale(LOWER_ARM_WIDTH, LOWER_ARM_HEIGHT, LOWER_ARM_WIDTH);
-    var instanceMatrix = mult( translate( 0.0, 0.5 * LOWER_ARM_HEIGHT, 0.0 ), s);
+  var s = scale(LOWER_ARM_WIDTH, LOWER_ARM_HEIGHT, LOWER_ARM_WIDTH);
+  var instanceMatrix = mult( translate( 0.0, 0.5 * LOWER_ARM_HEIGHT, 0.0 ), s);
 
 
-    var t = mult(modelViewMatrix, instanceMatrix);
-    gl.uniformMatrix4fv( modelViewMatrixLoc,  false, flatten(t)   );
-    gl.drawArrays( gl.TRIANGLES, 0, NumVertices );
+  var t = mult(modelViewMatrix, instanceMatrix);
+  gl.uniformMatrix4fv( modelViewMatrixLoc,  false, flatten(t)   );
+  gl.drawArrays( gl.TRIANGLES, 0, NumVertices );
 
 }
 
