@@ -90,7 +90,7 @@ var LIMITS = {
 };
 
 var angle = 0;
-
+var gripperAutomation = null; // Will hold our automation instance
 var modelViewMatrixLoc;
 
 var vBuffer, cBuffer;
@@ -307,12 +307,11 @@ function addTargetAngle(jointIndex, deltaDeg) {
 
 // Smoothly move current theta toward targetTheta
 function updateSmoothAngles() {
-  // joints
+  // joints (existing code remains the same)
   for (var i = 0; i < 3; i++) {
     var diff = targetTheta[i] - theta[i];
-
+    
     if (Math.abs(diff) < 0.05) {
-      // If it just snapped, announce reached
       if (theta[i] !== targetTheta[i]) {
         theta[i] = targetTheta[i];
         motionStatus(`${nameOfJoint(i)} rotated to ${theta[i].toFixed(0)}°`);
@@ -320,11 +319,11 @@ function updateSmoothAngles() {
         theta[i] = targetTheta[i];
       }
     } else {
-      theta[i] += diff * (smoothSpeed* speedMult);
+      theta[i] += diff * (smoothSpeed * speedMult);
     }
   }
-
-  // gripper
+  
+  // gripper (existing code remains the same)
   var gdiff = grip.targetOpen - grip.open;
   if (Math.abs(gdiff) < 0.005) {
     if (grip.open !== grip.targetOpen) {
@@ -336,24 +335,27 @@ function updateSmoothAngles() {
   } else {
     grip.open += gdiff * (grip.smoothSpeed * speedMult);
   }
-
-  // keep sliders synced to the *targets* (or current) so UI stays consistent
+  
+  // Update automation module
+  if (gripperAutomation) {
+    gripperAutomation.update();
+  }
+  
+  // keep sliders synced (existing code remains the same)
   var s1 = document.getElementById("slider1");
   var s2 = document.getElementById("slider2");
   var s3 = document.getElementById("slider3");
-
+  
   if (s1) s1.value = Math.round(targetTheta[Base]);
   if (s2) s2.value = Math.round(targetTheta[LowerArm]);
   if (s3) s3.value = Math.round(targetTheta[UpperArm]);
-
+  
   var s4 = document.getElementById("slider4");
   if (s4) {
-    // map grip.open (min..max) -> 0..100
     var pct = ((grip.targetOpen - grip.min) / (grip.max - grip.min)) * 100;
     s4.value = clamp(pct, 0, 100);
   }
 }
-
 
 // Feedback ownership (console + optional HTML element)
 function motionStatus(msg) {
@@ -465,7 +467,52 @@ function init() {
 
     setInitialPose(75, 35, 90, 0.55);
     motionStatus("Lower Arm rotated to initial pose");
+    // test code deepseek 
+    gripperAutomation = new GripperAutomation({
+  // Pass references to arm control functions
+  setTargetAngle: setTargetAngle,
+  setGripTarget: setGripTarget,
+  motionStatus: motionStatus,
+  Base: Base,
+  LowerArm: LowerArm,
+  UpperArm: UpperArm,
+  theta: theta,
+  targetTheta: targetTheta,
+  grip: grip
+});
 
+// Update automation UI every 100ms
+setInterval(() => {
+  if (gripperAutomation) {
+    gripperAutomation.updateUI();
+  }
+}, 100);
+
+// Add automation keyboard shortcuts
+window.addEventListener("keydown", function(e) {
+  if (!gripperAutomation) return;
+  
+  var k = e.key.toLowerCase();
+  
+  switch (k) {
+    case "1": // Start automation
+      gripperAutomation.startPickAndPlace();
+      break;
+    case "2": // Stop automation
+      gripperAutomation.stopAutomation();
+      break;
+    case "3": // Reset arm
+      gripperAutomation.resetArm();
+      break;
+    case "4": // Open gripper
+      gripperAutomation.openGripper();
+      break;
+    case "5": // Close gripper
+      gripperAutomation.closeGripper();
+      break;
+  }
+});
+// end of testing code
     render();
     
     window.addEventListener("keydown", function (e) {

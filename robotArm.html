@@ -14,6 +14,42 @@
   </header>
 
   <main>
+    <!-- Automation Controls -->
+    <section aria-labelledby="automation-title">
+      <h3 id="automation-title">Automation Controls</h3>
+      
+      <fieldset>
+        <legend>Pick-and-Place Automation</legend>
+        
+        <div>
+          <button id="start-auto-btn" onclick="gripperAutomation.startPickAndPlace()">▶ Start Automation</button>
+          <button id="stop-auto-btn" onclick="gripperAutomation.stopAutomation()" disabled>⏹ Stop</button>
+          <button id="reset-arm-btn" onclick="gripperAutomation.resetArm()">↻ Reset Arm</button>
+        </div>
+        
+        <div style="margin-top: 10px;">
+          <button onclick="gripperAutomation.openGripper()">⇄ Open Gripper</button>
+          <button onclick="gripperAutomation.closeGripper()">⇶ Close Gripper</button>
+        </div>
+        
+        <div style="margin-top: 10px; font-size: 14px;">
+          <p><strong>Automation State:</strong> <span id="auto-state">Idle</span></p>
+          <p><strong>Gripper State:</strong> <span id="gripper-state">Open</span></p>
+          <p><strong>Holding Object:</strong> <span id="holding-state">No</span></p>
+          <p><strong>Step:</strong> <span id="step-state">Idle</span></p>
+        </div>
+        
+        <div style="margin-top: 10px; font-size: 12px; color: #666;">
+          <p><strong>Keyboard Shortcuts:</strong></p>
+          <p>1: Start Automation</p>
+          <p>2: Stop Automation</p>
+          <p>3: Reset Arm</p>
+          <p>4: Open Gripper</p>
+          <p>5: Close Gripper</p>
+        </div>
+      </fieldset>
+    </section>
+
     <!-- Controls -->
     <section aria-labelledby="controls-title">
       <h3 id="controls-title">Controls</h3>
@@ -65,6 +101,11 @@
         <li><b>V</b> = Play mode (loop)</li>
         <li><b>Caps Lock</b> = Precision mode</li>
         <li><b>+</b> / <b>-</b> = Change movement speed</li>
+        <li><b>1</b> = Start Automation</li>
+        <li><b>2</b> = Stop Automation</li>
+        <li><b>3</b> = Reset Arm</li>
+        <li><b>4</b> = Open Gripper</li>
+        <li><b>5</b> = Close Gripper</li>
       </ul>
     </section>
 
@@ -116,6 +157,7 @@ void main()
   <!-- Scripts -->
   <script src="../Common/initShaders.js"></script>
   <script src="../Common/MVnew.js"></script>
+  <script src="autoAnimation.js"></script>
   <script src="robotArm.js"></script>
 
   <!-- Small UX helper (no CSS): show slider values beside outputs -->
