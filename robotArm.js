@@ -1,5 +1,6 @@
 "use strict";
 
+
 var canvas, gl, program;
 
 var CYL_SLICES = 96;         
@@ -101,11 +102,33 @@ function getGripperWorldPosition() {
     m = mult(m, rotate(-90, vec3(0, 1, 0)));
     
     // 6. Move to center of gripper jaws
-    m = mult(m, translate(0.0, 0.5, 0.0));  // Adjust this value!
+    m = mult(m, translate(0.0, 0.2, 0.0));  // Adjust this value!
     
     // Return as array [x, y, z]
     return [m[0][3], m[1][3], m[2][3]];
 }
+
+function isGripperAtBox() {
+    if (!object) return false;
+
+    const gPos = getGripperWorldPosition();
+    const bPos = object.position;
+
+    const dx = gPos[0] - bPos.x;
+    const dy = gPos[1] - bPos.y;
+    const dz = gPos[2] - bPos.z;
+
+    const distance = Math.sqrt(dx*dx + dy*dy + dz*dz);
+
+    console.log(
+        "Gripper-Box distance:", distance.toFixed(3),
+        "Gripper:", gPos.map(v => v.toFixed(2)),
+        "Box:", bPos.x.toFixed(2), bPos.y.toFixed(2), bPos.z.toFixed(2)
+    );
+
+    return distance < 0.6;   // IMPORTANT: increased tolerance
+}
+
 
 
 // Simple object drawing function
@@ -159,11 +182,12 @@ function isGripperNearObject() {
 
 // Check if arm is at target position
 function isArmAtTarget() {
-    var tolerance = 0.5; // degrees tolerance
+    const tolerance = 1.0; // degrees tolerance
     return Math.abs(theta[Base] - targetTheta[Base]) < tolerance &&
            Math.abs(theta[LowerArm] - targetTheta[LowerArm]) < tolerance &&
            Math.abs(theta[UpperArm] - targetTheta[UpperArm]) < tolerance;
 }
+
 
 // Function to draw a colored cube
 function drawColoredCube(color) {
@@ -286,8 +310,8 @@ var playHoldCounter = 0;
 // Joint angle limits
 var LIMITS = {
     base: { min: -180, max: 180 },
-    lowerArm: { min: -90, max: 90 },
-    upperArm: { min: -90, max: 90 }
+    lowerArm: { min: -150, max: 150 },
+    upperArm: { min: -150, max: 150 }
 };
 
 var gripperAutomation = null;
