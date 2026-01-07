@@ -1,30 +1,25 @@
-// autoAnimation.js - Gripper & Automation Module (ES5 Compatible)
 "use strict";
 
-// Constructor function (ES5 style)
+// Constructor function
 function GripperAutomation(armControls) {
-    // Store references to main arm controls
     this.arm = armControls;
-    
-    // Automation state
+
     this.automation = {
         active: false,
-        state: "idle", // "idle", "moving_to_pick", "grasping", "lifting", "moving_to_place", "releasing", "returning"
+        state: "idle",
         step: 0,
         routineSteps: [],
-        pickPosition: { base: 75, lower: -15, upper: 90 },
-        placePosition: { base: -75, lower: -15, upper: 90 },
-        liftAmount: 15, // degrees to lift after grasping
-        delayBetweenSteps: 300 // ms
+        pickPosition: { base: 0, lower: 75, upper: -30 },
+        placePosition: { base: 180, lower: 75, upper: -30 },
+        liftPosition: { base: 0, lower: 45, upper: 0 },
+        delayBetweenSteps: 500
     };
-    
-    // Gripper state
+
     this.gripState = {
         state: "open",
         holdingObject: false
     };
-    
-    // Define the routine
+
     this.definePickAndPlaceRoutine();
 }
 
@@ -42,47 +37,50 @@ GripperAutomation.prototype.closeGripper = function() {
     this.arm.motionStatus("Gripper closing...");
 };
 
-GripperAutomation.prototype.updateGripperState = function() {
-    var grip = this.arm.grip;
-    if (Math.abs(grip.open - grip.targetOpen) < 0.01) {
-        if (grip.targetOpen === grip.max) {
-            this.gripState.state = "open";
-            this.gripState.holdingObject = false;
-            this.arm.motionStatus("Gripper fully open");
-        } else if (grip.targetOpen === grip.min) {
-            this.gripState.state = "closed";
-            this.arm.motionStatus("Gripper fully closed" + (this.gripState.holdingObject ? " (object grasped)" : ""));
-        }
-    }
-};
-
 // ===== AUTOMATION ROUTINE =====
 
 GripperAutomation.prototype.definePickAndPlaceRoutine = function() {
     this.automation.routineSteps = [
         { type: "move", target: this.automation.pickPosition, desc: "Moving to pick position" },
         { type: "grasp", desc: "Grasping object" },
-        { type: "lift", amount: this.automation.liftAmount, desc: "Lifting object" },
+        { type: "move", target: this.automation.liftPosition, desc: "Lifting object" },
         { type: "move", target: this.automation.placePosition, desc: "Moving to place position" },
         { type: "release", desc: "Releasing object" },
-        { type: "lift", amount: -this.automation.liftAmount, desc: "Lowering gripper" },
-        { type: "move", target: { base: 75, lower: 35, upper: 90 }, desc: "Returning to home" }
+        { type: "move", target: { base: 0, lower: 35, upper: 45 }, desc: "Returning to home" }
     ];
 };
 
 GripperAutomation.prototype.startPickAndPlace = function() {
+    console.log("DEBUG: startPickAndPlace called");
+    
     if (this.automation.active) {
         this.arm.motionStatus("Automation already running");
         return;
     }
-    
+
     this.automation.active = true;
-    this.automation.state = "moving_to_pick";
     this.automation.step = 0;
+    this.automation.state = "starting";
     this.gripState.holdingObject = false;
-    
+
+    console.log("DEBUG: Automation state reset, step=" + this.automation.step);
+
+    if (this.arm.object) {
+        this.arm.object.isPicked = false;
+        this.arm.object.position.x = 5.0;
+        this.arm.object.position.y = 0.5;
+        this.arm.object.position.z = 0.0;
+        console.log("DEBUG: Object reset to pick position");
+    }
+
+    this.openGripper();
     this.arm.motionStatus("=== STARTING PICK-AND-PLACE ROUTINE ===");
-    this.executeNextStep();
+
+    var self = this;
+    setTimeout(function() {
+        console.log("DEBUG: Executing first step after timeout");
+        self.executeNextStep();
+    }, 1000);
 };
 
 GripperAutomation.prototype.stopAutomation = function() {
@@ -93,90 +91,171 @@ GripperAutomation.prototype.stopAutomation = function() {
 
 GripperAutomation.prototype.resetArm = function() {
     this.stopAutomation();
-    this.arm.setTargetAngle(this.arm.Base, 75);
+    this.arm.setTargetAngle(this.arm.Base, 0);
     this.arm.setTargetAngle(this.arm.LowerArm, 35);
-    this.arm.setTargetAngle(this.arm.UpperArm, 90);
+    this.arm.setTargetAngle(this.arm.UpperArm, 45);
     this.openGripper();
     this.gripState.holdingObject = false;
+
+    if (this.arm.object) {
+        this.arm.object.isPicked = false;
+        this.arm.object.position.x = 5.0;
+        this.arm.object.position.y = 0.5;
+        this.arm.object.position.z = 0.0;
+    }
+
     this.arm.motionStatus("Arm reset to home position");
 };
 
+// ===== STEP EXECUTION =====
+
 GripperAutomation.prototype.executeNextStep = function() {
-    if (!this.automation.active || this.automation.step >= this.automation.routineSteps.length) {
-        if (this.automation.active) {
-            this.arm.motionStatus("=== PICK-AND-PLACE ROUTINE COMPLETED! ===");
-            this.automation.active = false;
-            this.automation.state = "idle";
-        }
+    console.log("DEBUG =====================");
+    console.log("executeNextStep called - step:", this.automation.step);
+    console.log("Active:", this.automation.active);
+    console.log("Total steps:", this.automation.routineSteps.length);
+    
+    if (!this.automation.active) {
+        console.log("DEBUG: Automation not active, stopping");
         return;
     }
     
-    var currentStep = this.automation.routineSteps[this.automation.step];
-    this.automation.state = currentStep.type;
+    if (this.automation.step >= this.automation.routineSteps.length) {
+        console.log("DEBUG: All steps completed!");
+        this.automation.active = false;
+        this.automation.state = "idle";
+        this.arm.motionStatus("=== PICK-AND-PLACE ROUTINE COMPLETED! ===");
+        return;
+    }
+
+    var step = this.automation.routineSteps[this.automation.step];
+    console.log("DEBUG: Current step type:", step.type, "desc:", step.desc);
     
-    this.arm.motionStatus("[Step " + (this.automation.step + 1) + "/" + this.automation.routineSteps.length + "] " + currentStep.desc);
-    
-    var self = this; // Store reference for callbacks
-    
-    switch (currentStep.type) {
+    this.automation.state = step.type;
+    this.arm.motionStatus("[Step " + (this.automation.step + 1) + "/" + this.automation.routineSteps.length + "] " + step.desc);
+
+    var self = this;
+
+    switch(step.type) {
         case "move":
-            this.arm.setTargetAngle(this.arm.Base, currentStep.target.base);
-            this.arm.setTargetAngle(this.arm.LowerArm, currentStep.target.lower);
-            this.arm.setTargetAngle(this.arm.UpperArm, currentStep.target.upper);
+            console.log("DEBUG: Setting target angles:");
+            console.log("Base:", step.target.base);
+            console.log("Lower:", step.target.lower);
+            console.log("Upper:", step.target.upper);
+            
+            this.arm.targetTheta[this.arm.Base] = step.target.base;
+            this.arm.targetTheta[this.arm.LowerArm] = step.target.lower;
+            this.arm.targetTheta[this.arm.UpperArm] = step.target.upper;
+            
+            console.log("DEBUG: Target angles set, waiting for movement...");
             this.waitForMovementThenNext();
             break;
-            
+
         case "grasp":
+            console.log("DEBUG: Closing gripper for grasp");
             this.closeGripper();
             setTimeout(function() {
+                // Assume grasp worked after delay
                 self.gripState.holdingObject = true;
-                self.arm.motionStatus("✓ Object grasped successfully");
+                self.gripState.state = "closed";
+                if (self.arm.object) {
+                    self.arm.object.isPicked = true;
+                    console.log("DEBUG: Object marked as picked");
+                }
+                self.arm.motionStatus("✓ Object successfully grasped");
                 self.automation.step++;
-                self.executeNextStep();
-            }, 800);
+                setTimeout(function() {
+                    self.executeNextStep();
+                }, 500);
+            }, 1000);
             break;
-            
-        case "lift":
-            var currentLower = this.arm.targetTheta[this.arm.LowerArm];
-            this.arm.setTargetAngle(this.arm.LowerArm, currentLower + currentStep.amount);
-            this.waitForMovementThenNext();
-            break;
-            
+
         case "release":
+            console.log("DEBUG: Opening gripper for release");
             this.openGripper();
             setTimeout(function() {
+                if (self.arm.object) {
+                    self.arm.object.isPicked = false;
+                    // Set object at place position
+                    self.arm.object.position.x = -5.0; // place position x
+                    self.arm.object.position.y = 0.5;
+                    self.arm.object.position.z = 0.0;
+                    console.log("DEBUG: Object released at place position");
+                }
                 self.gripState.holdingObject = false;
-                self.arm.motionStatus("✓ Object released");
+                self.gripState.state = "open";
+                self.arm.motionStatus("✓ Object released at place position");
                 self.automation.step++;
-                self.executeNextStep();
-            }, 800);
+                setTimeout(function() {
+                    self.executeNextStep();
+                }, 500);
+            }, 1000);
             break;
     }
 };
 
 GripperAutomation.prototype.waitForMovementThenNext = function() {
     var self = this;
+    var startTime = Date.now();
+    var timeout = 10000; // 10 second timeout
+    var checkCount = 0;
+    
+    console.log("DEBUG: waitForMovementThenNext called for step", this.automation.step);
+    
     var checkInterval = setInterval(function() {
-        var movementComplete = 
-            Math.abs(self.arm.theta[self.arm.Base] - self.arm.targetTheta[self.arm.Base]) < 1 &&
-            Math.abs(self.arm.theta[self.arm.LowerArm] - self.arm.targetTheta[self.arm.LowerArm]) < 1 &&
-            Math.abs(self.arm.theta[self.arm.UpperArm] - self.arm.targetTheta[self.arm.UpperArm]) < 1;
+        checkCount++;
+        var elapsed = Date.now() - startTime;
         
-        if (movementComplete) {
+        if (checkCount % 20 === 0) { // Log every 20 checks (about 1 second)
+            console.log("DEBUG: Movement check #" + checkCount + ", elapsed: " + elapsed + "ms");
+        }
+        
+        if (elapsed > timeout) {
+            console.warn("DEBUG: MOVEMENT TIMEOUT at step", self.automation.step);
+            console.warn("Current angles:", 
+                "Base=" + self.arm.theta[self.arm.Base].toFixed(1) + 
+                " Lower=" + self.arm.theta[self.arm.LowerArm].toFixed(1) + 
+                " Upper=" + self.arm.theta[self.arm.UpperArm].toFixed(1));
+            console.warn("Target angles:", 
+                "Base=" + self.arm.targetTheta[self.arm.Base].toFixed(1) + 
+                " Lower=" + self.arm.targetTheta[self.arm.LowerArm].toFixed(1) + 
+                " Upper=" + self.arm.targetTheta[self.arm.UpperArm].toFixed(1));
+            
             clearInterval(checkInterval);
             self.automation.step++;
             setTimeout(function() {
                 self.executeNextStep();
-            }, self.automation.delayBetweenSteps);
+            }, 500);
+            return;
         }
-    }, 100);
+        
+        if (self.arm.isArmAtTarget()) {
+            console.log("DEBUG: Arm reached target at step", self.automation.step);
+            clearInterval(checkInterval);
+            self.automation.step++;
+            setTimeout(function() {
+                self.executeNextStep();
+            }, 500);
+        }
+    }, 50);
 };
 
-// ===== UPDATE & STATUS =====
+// ===== UPDATE LOOP =====
 
 GripperAutomation.prototype.update = function() {
-    this.updateGripperState();
+    if (!this.automation.active) return;
+
+    if (this.gripState.holdingObject && this.arm.object) {
+        let gPos = getGripperWorldPosition();
+        this.arm.object.position.x = gPos[0];
+        this.arm.object.position.y = gPos[1];
+        this.arm.object.position.z = gPos[2];
+        console.log("Moving object with gripper:", 
+                   gPos[0].toFixed(2), gPos[1].toFixed(2), gPos[2].toFixed(2));
+    }
 };
+
+// ===== STATUS =====
 
 GripperAutomation.prototype.getStatus = function() {
     return {
@@ -189,39 +268,32 @@ GripperAutomation.prototype.getStatus = function() {
     };
 };
 
-// ===== UI HELPER FUNCTIONS =====
+GripperAutomation.prototype.nextStep = function() {
+    this.automation.step++;
+    if (this.automation.step >= this.automation.routineSteps.length) {
+        this.automation.active = false;
+        this.arm.motionStatus("✓ Pick-and-place routine completed");
+    }
+};
+
+// ===== HELPER FUNCTIONS =====
 
 GripperAutomation.prototype.updateUI = function() {
     var status = this.getStatus();
-    
-    // Update automation status display
     var autoStateEl = document.getElementById("auto-state");
     var gripperStateEl = document.getElementById("gripper-state");
     var holdingStateEl = document.getElementById("holding-state");
     var stepStateEl = document.getElementById("step-state");
-    
+
     if (autoStateEl) autoStateEl.textContent = status.automationState;
     if (gripperStateEl) gripperStateEl.textContent = status.gripperState;
     if (holdingStateEl) holdingStateEl.textContent = status.holdingObject ? "Yes" : "No";
-    if (stepStateEl) {
-        stepStateEl.textContent = status.active ? 
-            "Step " + status.step + "/" + status.totalSteps : "Idle";
-    }
-    
-    // Update button states
-    var startBtn = document.getElementById("start-auto-btn");
-    var stopBtn = document.getElementById("stop-auto-btn");
-    var resetBtn = document.getElementById("reset-arm-btn");
-    
-    if (startBtn) startBtn.disabled = status.active;
-    if (stopBtn) stopBtn.disabled = !status.active;
-    if (resetBtn) resetBtn.disabled = status.active;
+    if (stepStateEl) stepStateEl.textContent = status.active ? 
+        "Step " + status.step + "/" + status.totalSteps : "Idle";
 };
 
-// Make sure the class is available globally
 if (typeof window !== 'undefined') {
     window.GripperAutomation = GripperAutomation;
 }
 
-// Debug message
-console.log("autoAnimation.js loaded - GripperAutomation available:", typeof GripperAutomation);
+console.log("autoAnimation.js loaded - GripperAutomation available");

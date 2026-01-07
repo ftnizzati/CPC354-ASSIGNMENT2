@@ -7,9 +7,7 @@ var NumVertices = 0;
 var colors = [];
 var points = [];
 
-
 // Parameters controlling the size of the Robot's arm
-
 var BASE_HEIGHT      = 2.0;
 var BASE_WIDTH       = 5.0;
 var LOWER_ARM_HEIGHT = 5.0;
@@ -17,56 +15,259 @@ var LOWER_ARM_WIDTH  = 0.5;
 var UPPER_ARM_HEIGHT = 5.0;
 var UPPER_ARM_WIDTH  = 0.5;
 
-// --- Gripper (non-functional) sizes ---
-var GRIPPER_PALM_HEIGHT = 0.3;
-var GRIPPER_PALM_WIDTH  = 0.8;
-var GRIPPER_PALM_DEPTH  = 0.4;
-
-var FINGER_HEIGHT = 1.0;
-var FINGER_WIDTH  = 0.18;
-var FINGER_DEPTH  = 0.18;
-
-var FINGER_GAP = 0.35;   // distance between fingers
-
-
 // Shader transformation matrices
-
 var modelViewMatrix, projectionMatrix;
 
 // Array of rotation angles (in degrees) for each rotation axis
-
 var Base = 0;
 var LowerArm = 1;
 var UpperArm = 2;
 
 // Current angles for each joint
-var theta= [ 0, 0, 0];
+var theta = [0, 0, 0];
 // Target angles for each joint
-var targetTheta = [ 0, 0, 0];
+var targetTheta = [0, 0, 0];
 
 // ===== Gripper control (functional) =====
 var grip = {
-  // This controls how far apart fingers are (model units)
   open: 0.55,          // current gap (start open)
   targetOpen: 0.55,    // target gap
   min: 0.15,           // fully closed gap
   max: 0.75,           // fully open gap
-  smoothSpeed: 0.12    // smoothing factor per frame (like joint smoothSpeed)
+  smoothSpeed: 0.12
 };
 
+// ===== OBJECT CONFIGURATION =====
+var object = {
+    position: {
+        x: 5.0,  // Changed from 0.0 to 5.0 to match automation
+        y: 0.5,
+        z: 0.0   // Changed from 6.0 to 0.0
+    },
+    size: {
+        width: 0.5,
+        height: 0.5,
+        depth: 0.5
+    },
+    color: {
+        red: 1.0,
+        green: 0.0,
+        blue: 0.0,
+        alpha: 1.0
+    },
+    isPicked: false
+};
+
+// Place position for the object (where to put it)
+var placePosition = {
+    x: -5.0,
+    y: 0.5,
+    z: 0.0
+};
+
+// Helper function to get object color
+function getObjectColorVec() {
+    return vec4(
+        object.color.red,
+        object.color.green,
+        object.color.blue,
+        object.color.alpha
+    );
+}
+
+// Calculate actual gripper position in world space
+function getGripperWorldPosition() {
+    // Start from identity matrix
+    var m = mat4();
+    
+    // IMPORTANT: Apply transformations in reverse order of how they're drawn
+    
+    // 1. Base rotation (Y axis)
+    m = mult(m, rotate(theta[0], vec3(0, 1, 0)));
+    
+    // 2. Lower arm offset and rotation
+    m = mult(m, translate(0.0, BASE_HEIGHT, 0.0));
+    m = mult(m, rotate(theta[1], vec3(0, 0, 1)));
+    
+    // 3. Upper arm offset and rotation
+    m = mult(m, translate(0.0, LOWER_ARM_HEIGHT, 0.0));
+    m = mult(m, rotate(theta[2], vec3(0, 0, 1)));
+    
+    // 4. Move to end of upper arm (gripper attachment point)
+    m = mult(m, translate(0.0, UPPER_ARM_HEIGHT, 0.0));
+    
+    // 5. Rotate gripper to face forward (depends on your gripper orientation)
+    // Try different values here if this doesn't work:
+    m = mult(m, rotate(-90, vec3(0, 1, 0)));
+    
+    // 6. Move to center of gripper jaws
+    m = mult(m, translate(0.0, 0.5, 0.0));  // Adjust this value!
+    
+    // Return as array [x, y, z]
+    return [m[0][3], m[1][3], m[2][3]];
+}
+
+
+// Simple object drawing function
+function drawObject() {
+    if (object.isPicked) return; // handled in gripper()
+
+    var saved = modelViewMatrix;
+
+    modelViewMatrix = mult(modelViewMatrix, translate(
+        object.position.x,
+        object.position.y,
+        object.position.z
+    ));
+
+    modelViewMatrix = mult(modelViewMatrix, scale(
+        object.size.width,
+        object.size.height,
+        object.size.depth
+    ));
+
+    drawColoredCube(getObjectColorVec());
+
+    modelViewMatrix = saved;
+}
+
+// realistic pick detection
+function isGripperNearObject() {
+    // TEMPORARY: Always return true when at pick position
+    if (Math.abs(theta[Base] - 0) < 5 && 
+        Math.abs(theta[LowerArm] - 75) < 5 && 
+        Math.abs(theta[UpperArm] - (-30)) < 5) {
+        console.log("At pick position - assuming object is reachable");
+        return true;
+    }
+    
+    // Original distance calculation (for when position is fixed)
+    var g = getGripperWorldPosition();
+    var gx = g[0];
+    var gy = g[1];
+    var gz = g[2];
+    
+    var dx = gx - object.position.x;
+    var dy = gy - object.position.y;
+    var dz = gz - object.position.z;
+
+    var dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+    
+    console.log("Distance to object:", dist.toFixed(2));
+    return dist < 2.0; // Increased tolerance
+}
+
+// Check if arm is at target position
+function isArmAtTarget() {
+    var tolerance = 0.5; // degrees tolerance
+    return Math.abs(theta[Base] - targetTheta[Base]) < tolerance &&
+           Math.abs(theta[LowerArm] - targetTheta[LowerArm]) < tolerance &&
+           Math.abs(theta[UpperArm] - targetTheta[UpperArm]) < tolerance;
+}
+
+// Function to draw a colored cube
+function drawColoredCube(color) {
+    // Create cube vertices
+    var cubeVertices = [
+        // Front face
+        vec4(-0.5, -0.5,  0.5, 1.0),
+        vec4( 0.5, -0.5,  0.5, 1.0),
+        vec4( 0.5,  0.5,  0.5, 1.0),
+        vec4(-0.5,  0.5,  0.5, 1.0),
+        // Back face
+        vec4(-0.5, -0.5, -0.5, 1.0),
+        vec4(-0.5,  0.5, -0.5, 1.0),
+        vec4( 0.5,  0.5, -0.5, 1.0),
+        vec4( 0.5, -0.5, -0.5, 1.0),
+        // Top face
+        vec4(-0.5,  0.5, -0.5, 1.0),
+        vec4(-0.5,  0.5,  0.5, 1.0),
+        vec4( 0.5,  0.5,  0.5, 1.0),
+        vec4( 0.5,  0.5, -0.5, 1.0),
+        // Bottom face
+        vec4(-0.5, -0.5, -0.5, 1.0),
+        vec4( 0.5, -0.5, -0.5, 1.0),
+        vec4( 0.5, -0.5,  0.5, 1.0),
+        vec4(-0.5, -0.5,  0.5, 1.0),
+        // Right face
+        vec4( 0.5, -0.5, -0.5, 1.0),
+        vec4( 0.5,  0.5, -0.5, 1.0),
+        vec4( 0.5,  0.5,  0.5, 1.0),
+        vec4( 0.5, -0.5,  0.5, 1.0),
+        // Left face
+        vec4(-0.5, -0.5, -0.5, 1.0),
+        vec4(-0.5, -0.5,  0.5, 1.0),
+        vec4(-0.5,  0.5,  0.5, 1.0),
+        vec4(-0.5,  0.5, -0.5, 1.0)
+    ];
+    
+    // Create triangle indices for cube
+    var cubeIndices = [
+        0, 1, 2, 0, 2, 3,    // front
+        4, 5, 6, 4, 6, 7,    // back
+        8, 9, 10, 8, 10, 11,  // top
+        12, 13, 14, 12, 14, 15, // bottom
+        16, 17, 18, 16, 18, 19, // right
+        20, 21, 22, 20, 22, 23  // left
+    ];
+    
+    // Build final arrays
+    var finalVertices = [];
+    var finalColors = [];
+    
+    for (var i = 0; i < cubeIndices.length; i++) {
+        finalVertices.push(cubeVertices[cubeIndices[i]]);
+        finalColors.push(color);
+    }
+    
+    // Save current buffer bindings
+    var originalVBuffer = gl.getParameter(gl.ARRAY_BUFFER_BINDING);
+    
+    // Create and bind vertex buffer
+    var tempVBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, tempVBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, flatten(finalVertices), gl.STATIC_DRAW);
+    
+    var positionLoc = gl.getAttribLocation(program, "aPosition");
+    gl.vertexAttribPointer(positionLoc, 4, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(positionLoc);
+    
+    // Create and bind color buffer
+    var tempCBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, tempCBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, flatten(finalColors), gl.STATIC_DRAW);
+    
+    var colorLoc = gl.getAttribLocation(program, "aColor");
+    gl.vertexAttribPointer(colorLoc, 4, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(colorLoc);
+    
+    // Draw the cube
+    gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(modelViewMatrix));
+    gl.drawArrays(gl.TRIANGLES, 0, finalVertices.length);
+    
+    // Restore original buffers
+    gl.bindBuffer(gl.ARRAY_BUFFER, vBuffer);
+    gl.vertexAttribPointer(positionLoc, 4, gl.FLOAT, false, 0, 0);
+    
+    gl.bindBuffer(gl.ARRAY_BUFFER, cBuffer);
+    gl.vertexAttribPointer(colorLoc, 4, gl.FLOAT, false, 0, 0);
+    
+    // Restore original buffer binding if it existed
+    if (originalVBuffer) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, originalVBuffer);
+    }
+}
 
 var step = 10;
 var smoothSpeed = 0.15;
 
 // ===== Key mapping settings =====
-var precisionMode = false;     // CAPS LOCK toggles this
+var precisionMode = false;
 var baseStepNormal = 10;
 var baseStepPrec   = 1;
-
-var armStepNormal  = 10;       // W/S and L/D use this
+var armStepNormal  = 10;
 var armStepPrec    = 1;
-
-var gripStepNormal = 0.08;     // R/F change gap (model units)
+var gripStepNormal = 0.08;
 var gripStepPrec   = 0.02;
 
 // Speed scaling (+ / -)
@@ -77,9 +278,9 @@ var SPEED_MAX = 3.0;
 // Record / playback
 var recordMode = false;
 var playMode = false;
-var savedPoses = [];     // array of { theta:[..], grip:.. }
+var savedPoses = [];
 var playIndex = 0;
-var playHoldFrames = 10; // pause slightly at each pose
+var playHoldFrames = 10;
 var playHoldCounter = 0;
 
 // Joint angle limits
@@ -89,21 +290,18 @@ var LIMITS = {
     upperArm: { min: -90, max: 90 }
 };
 
-var angle = 0;
-var gripperAutomation = null; // Will hold our automation instance
+var gripperAutomation = null;
 var modelViewMatrixLoc;
-
 var vBuffer, cBuffer;
 
 window.onload = init;
+
 //----------------------------------------------------------------------------
 
 function buildCylinder(slices) {
   points = [];
   colors = [];
 
-  // Unit cylinder centered at origin:
-  // y from -0.5 to +0.5, radius = 0.5
   var r = 0.5;
   var yTop = 0.5;
   var yBot = -0.5;
@@ -115,9 +313,8 @@ function buildCylinder(slices) {
     return vec4(r * Math.cos(theta), y, r * Math.sin(theta), 1);
   }
 
-  // choose colors directly (no vertexColors needed)
-  var sideColor = vec4(0.2, 0.2, 0.8, 1.0); // blue
-  var capColor  = vec4(0.8, 0.8, 0.0, 1.0); // yellow
+  var sideColor = vec4(0.2, 0.2, 0.8, 1.0);
+  var capColor  = vec4(0.8, 0.8, 0.0, 1.0);
 
   for (var i = 0; i < slices; i++) {
     var a0 = (i / slices) * 2 * Math.PI;
@@ -128,7 +325,7 @@ function buildCylinder(slices) {
     var v2 = ringVertex(a1, yTop);
     var v3 = ringVertex(a0, yTop);
 
-    // ---- side (2 triangles) ----
+    // Side (2 triangles)
     colors.push(sideColor); points.push(v0);
     colors.push(sideColor); points.push(v1);
     colors.push(sideColor); points.push(v2);
@@ -137,12 +334,12 @@ function buildCylinder(slices) {
     colors.push(sideColor); points.push(v2);
     colors.push(sideColor); points.push(v3);
 
-    // ---- top cap (1 triangle) ----
+    // Top cap (1 triangle)
     colors.push(capColor); points.push(topCenter);
     colors.push(capColor); points.push(v3);
     colors.push(capColor); points.push(v2);
 
-    // ---- bottom cap (1 triangle) ----
+    // Bottom cap (1 triangle)
     colors.push(capColor); points.push(botCenter);
     colors.push(capColor); points.push(v1);
     colors.push(capColor); points.push(v0);
@@ -150,7 +347,6 @@ function buildCylinder(slices) {
 
   NumVertices = points.length;
 }
-
 
 function clamp(val, min, max) {
   return Math.max(min, Math.min(max, val));
@@ -171,8 +367,6 @@ function limitsForJoint(j) {
 }
 
 function isPrecisionNow(e) {
-  // CAPS LOCK state (works in most browsers)
-  // Also keep a manual toggle in case some systems don't report it reliably.
   if (e && typeof e.getModifierState === "function") {
     precisionMode = e.getModifierState("CapsLock");
   }
@@ -244,11 +438,9 @@ function stopPlayMode() {
   motionStatus("Play Mode: OFF");
 }
 
-// Call every frame to advance playback
 function updatePlayback() {
   if (!playMode || savedPoses.length === 0) return;
 
-  // When we reach the current pose, hold briefly, then advance.
   var allReached =
     Math.abs(theta[Base]     - targetTheta[Base])     < 0.1 &&
     Math.abs(theta[LowerArm] - targetTheta[LowerArm]) < 0.1 &&
@@ -268,8 +460,7 @@ function updatePlayback() {
   }
 }
 
-
-var MOTION_SCALE = 0.5; // cut all motion degrees in half
+var MOTION_SCALE = 0.5;
 
 function setGripperTargetByPercent(percent0to100) {
   var p = clamp(percent0to100, 0, 100) / 100.0;
@@ -307,65 +498,44 @@ function addTargetAngle(jointIndex, deltaDeg) {
 
 // Smoothly move current theta toward targetTheta
 function updateSmoothAngles() {
-  // joints (existing code remains the same)
-  for (var i = 0; i < 3; i++) {
-    var diff = targetTheta[i] - theta[i];
-    
-    if (Math.abs(diff) < 0.05) {
-      if (theta[i] !== targetTheta[i]) {
-        theta[i] = targetTheta[i];
-        motionStatus(`${nameOfJoint(i)} rotated to ${theta[i].toFixed(0)}°`);
-      } else {
-        theta[i] = targetTheta[i];
-      }
-    } else {
-      theta[i] += diff * (smoothSpeed * speedMult);
+    // joints
+    for (var i = 0; i < 3; i++) {
+        var diff = targetTheta[i] - theta[i];
+
+        if (Math.abs(diff) < 0.05) {
+            theta[i] = targetTheta[i]; // snap to target
+        } else {
+            theta[i] += diff * (smoothSpeed * speedMult);
+        }
     }
-  }
-  
-  // gripper (existing code remains the same)
-  var gdiff = grip.targetOpen - grip.open;
-  if (Math.abs(gdiff) < 0.005) {
-    if (grip.open !== grip.targetOpen) {
-      grip.open = grip.targetOpen;
-      motionStatus(`Gripper set to ${grip.open.toFixed(2)} (gap)`);
+
+    // gripper
+    var gdiff = grip.targetOpen - grip.open;
+    if (Math.abs(gdiff) < 0.005) {
+        grip.open = grip.targetOpen;
     } else {
-      grip.open = grip.targetOpen;
+        grip.open += gdiff * (grip.smoothSpeed * speedMult);
     }
-  } else {
-    grip.open += gdiff * (grip.smoothSpeed * speedMult);
-  }
-  
-  // Update automation module
-  if (gripperAutomation) {
-    gripperAutomation.update();
-  }
-  
-  // keep sliders synced (existing code remains the same)
-  var s1 = document.getElementById("slider1");
-  var s2 = document.getElementById("slider2");
-  var s3 = document.getElementById("slider3");
-  
-  if (s1) s1.value = Math.round(targetTheta[Base]);
-  if (s2) s2.value = Math.round(targetTheta[LowerArm]);
-  if (s3) s3.value = Math.round(targetTheta[UpperArm]);
-  
-  var s4 = document.getElementById("slider4");
-  if (s4) {
-    var pct = ((grip.targetOpen - grip.min) / (grip.max - grip.min)) * 100;
-    s4.value = clamp(pct, 0, 100);
-  }
+
+    // keep sliders synced
+    var s1 = document.getElementById("slider1");
+    var s2 = document.getElementById("slider2");
+    var s3 = document.getElementById("slider3");
+    var s4 = document.getElementById("slider4");
+
+    if (s1) s1.value = Math.round(targetTheta[Base]);
+    if (s2) s2.value = Math.round(targetTheta[LowerArm]);
+    if (s3) s3.value = Math.round(targetTheta[UpperArm]);
+    if (s4) {
+        var pct = ((grip.targetOpen - grip.min) / (grip.max - grip.min)) * 100;
+        s4.value = clamp(pct, 0, 100);
+    }
 }
 
 // Feedback ownership (console + optional HTML element)
 function motionStatus(msg) {
-  // Build a compact readable status line
-  var line =
-    msg + " | " +
-    "Base " + theta[Base].toFixed(1) + "° (→ " + targetTheta[Base].toFixed(1) + "°), " +
-    "Lower " + theta[LowerArm].toFixed(1) + "° (→ " + targetTheta[LowerArm].toFixed(1) + "°), " +
-    "Upper " + theta[UpperArm].toFixed(1) + "° (→ " + targetTheta[UpperArm].toFixed(1) + "°), " +
-    "Grip " + grip.open.toFixed(2) + " (→ " + grip.targetOpen.toFixed(2) + ")";
+  var line = msg + " | Base: " + theta[Base].toFixed(1) + "° Lower: " + 
+            theta[LowerArm].toFixed(1) + "° Upper: " + theta[UpperArm].toFixed(1) + "°";
 
   console.log("[Motion]", line);
 
@@ -373,17 +543,13 @@ function motionStatus(msg) {
   if (el) el.textContent = line;
 }
 
-//--------------------------------------------------
-
 function setInitialPose(baseDeg, lowerDeg, upperDeg, gripGap) {
-  // Set both current + target so it doesn't animate from 0
   theta[Base] = targetTheta[Base] = baseDeg;
   theta[LowerArm] = targetTheta[LowerArm] = lowerDeg;
   theta[UpperArm] = targetTheta[UpperArm] = upperDeg;
 
   grip.open = grip.targetOpen = gripGap;
 
-  // Sync sliders if they exist
   var s1 = document.getElementById("slider1");
   var s2 = document.getElementById("slider2");
   var s3 = document.getElementById("slider3");
@@ -394,214 +560,251 @@ function setInitialPose(baseDeg, lowerDeg, upperDeg, gripGap) {
   if (s3) s3.value = upperDeg;
 
   if (s4) {
-    // slider4 is 0..100, convert from gap to percent
     var pct = ((gripGap - grip.min) / (grip.max - grip.min)) * 100;
     s4.value = clamp(pct, 0, 100);
   }
 }
 
-//--------------------------------------------------
-
-
 function init() {
+    try {
+        canvas = document.getElementById("gl-canvas");
+        
+        if (!canvas) {
+            alert("Canvas element not found!");
+            return;
+        }
 
-    canvas = document.getElementById( "gl-canvas" );
+        gl = canvas.getContext('webgl2');
+        if (!gl) { 
+            alert("WebGL 2.0 isn't available"); 
+            return;
+        }
 
-    gl = canvas.getContext('webgl2');
-    if (!gl) { alert( "WebGL 2.0 isn't available" ); }
+        gl.viewport(0, 0, canvas.width, canvas.height);
+        gl.clearColor(1.0, 1.0, 1.0, 1.0);
+        gl.enable(gl.DEPTH_TEST);
 
-    gl.viewport( 0, 0, canvas.width, canvas.height );
+        // Load shaders
+        program = initShaders(gl, "vertex-shader", "fragment-shader");
+        if (!program) {
+            alert("Failed to initialize shaders");
+            return;
+        }
+        
+        gl.useProgram(program);
 
-    gl.clearColor( 1.0, 1.0, 1.0, 1.0 );
-    gl.enable( gl.DEPTH_TEST );
+        // Build cylinder geometry
+        buildCylinder(CYL_SLICES);
+        console.log("NumVertices =", NumVertices);
 
-    //  Load shaders and initialize attribute buffers
-    program = initShaders( gl, "vertex-shader", "fragment-shader" );
+        // Create and initialize buffer objects
+        vBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, vBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, flatten(points), gl.STATIC_DRAW);
 
-    gl.useProgram( program );
+        var positionLoc = gl.getAttribLocation(program, "aPosition");
+        if (positionLoc < 0) {
+            console.error("Could not find aPosition attribute");
+        }
+        gl.vertexAttribPointer(positionLoc, 4, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(positionLoc);
 
-    buildCylinder(CYL_SLICES);
-    console.log("NumVertices =", NumVertices);
+        cBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, cBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, flatten(colors), gl.STATIC_DRAW);
 
-    // Load shaders and use the resulting shader program
+        var colorLoc = gl.getAttribLocation(program, "aColor");
+        if (colorLoc < 0) {
+            console.error("Could not find aColor attribute");
+        }
+        gl.vertexAttribPointer(colorLoc, 4, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(colorLoc);
 
-    program = initShaders( gl, "vertex-shader", "fragment-shader" );
-    gl.useProgram( program );
+        // Set up slider event handlers
+        var slider1 = document.getElementById("slider1");
+        var slider2 = document.getElementById("slider2");
+        var slider3 = document.getElementById("slider3");
+        var slider4 = document.getElementById("slider4");
+        
+        if (slider1) slider1.onchange = function(event) {
+            setTargetAngle(Base, Number(event.target.value)*MOTION_SCALE);
+        };
+        if (slider2) slider2.onchange = function(event) {
+            setTargetAngle(LowerArm, Number(event.target.value)*MOTION_SCALE);
+        };
+        if (slider3) slider3.onchange = function(event) {
+            setTargetAngle(UpperArm, Number(event.target.value)*MOTION_SCALE);
+        };
+        if (slider4) slider4.onchange = function(event) {
+            setGripperTargetByPercent(Number(event.target.value));
+        };
 
-    // Create and initialize  buffer objects
+        modelViewMatrixLoc = gl.getUniformLocation(program, "modelViewMatrix");
+        if (!modelViewMatrixLoc) {
+            console.error("Could not find modelViewMatrix uniform");
+        }
 
-    vBuffer = gl.createBuffer();
-    gl.bindBuffer( gl.ARRAY_BUFFER, vBuffer );
-    gl.bufferData( gl.ARRAY_BUFFER, flatten(points), gl.STATIC_DRAW );
+        projectionMatrix = ortho(-10, 10, -10, 10, -10, 10);
+        var projectionMatrixLoc = gl.getUniformLocation(program, "projectionMatrix");
+        if (projectionMatrixLoc) {
+            gl.uniformMatrix4fv(projectionMatrixLoc, false, flatten(projectionMatrix));
+        }
 
-    var positionLoc = gl.getAttribLocation( program, "aPosition" );
-    gl.vertexAttribPointer( positionLoc, 4, gl.FLOAT, false, 0, 0 );
-    gl.enableVertexAttribArray( positionLoc );
+        // Initialize modelViewMatrix
+        modelViewMatrix = mat4();
+        
+        setInitialPose(75, 35, 90, 0.55);
+        motionStatus("Robot Arm Initialized");
+        
+        // Initialize automation with proper arm controls
+        if (typeof GripperAutomation !== 'undefined') {
+            var armControls = {
+                setTargetAngle: setTargetAngle,
+                setGripTarget: setGripTarget,
+                motionStatus: motionStatus,
+                Base: Base,
+                LowerArm: LowerArm,
+                UpperArm: UpperArm,
+                theta: theta,
+                targetTheta: targetTheta,
+                grip: grip,
+                object: object,
+                placePosition: placePosition,
+                isArmAtTarget: isArmAtTarget,  // Added this function
+                getGripperWorldPosition: getGripperWorldPosition  // Added this function
+            };
 
-    cBuffer = gl.createBuffer();
-    gl.bindBuffer( gl.ARRAY_BUFFER, cBuffer );
-    gl.bufferData( gl.ARRAY_BUFFER, flatten(colors), gl.STATIC_DRAW );
+            gripperAutomation = new GripperAutomation(armControls);
 
-    var colorLoc = gl.getAttribLocation( program, "aColor" );
-    gl.vertexAttribPointer( colorLoc, 4, gl.FLOAT, false, 0, 0 );
-    gl.enableVertexAttribArray( colorLoc );
+            // Update automation UI every 100ms
+            setInterval(function() {
+                if (gripperAutomation) {
+                    gripperAutomation.updateUI();
+                }
+            }, 100);
+        } else {
+            console.log("GripperAutomation not loaded yet");
+        }
+        
+        // Start rendering
+        render();
+        
+        // Keyboard event handler
+        window.addEventListener("keydown", function (e) {
+            var k = e.key.toLowerCase();
 
-    document.getElementById("slider1").onchange = function(event) {
-    setTargetAngle(Base, Number(event.target.value)*MOTION_SCALE);
-    };
-    document.getElementById("slider2").onchange = function(event) {
-    setTargetAngle(LowerArm, Number(event.target.value)*MOTION_SCALE);
-    };
-    document.getElementById("slider3").onchange = function(event) {
-    setTargetAngle(UpperArm, Number(event.target.value)*MOTION_SCALE);
-    };
-    document.getElementById("slider4").onchange = function(event) {
-    setGripperTargetByPercent(Number(event.target.value));
+            // Keep precisionMode synced with CAPS LOCK
+            isPrecisionNow(e);
+
+            // Prevent spacebar scrolling the page
+            if (e.key === " ") e.preventDefault();
+
+            // Steps
+            var baseStep = currentStepDeg(e, "base");
+            var armStep  = currentStepDeg(e, "arm");
+            var gStep    = currentGripStep(e);
+
+            switch (k) {
+                // Base rotation
+                case "a": addTargetAngle(Base, +baseStep); break;
+                case "d": addTargetAngle(Base, -baseStep); break;
+
+                // Lower arm
+                case "s": addTargetAngle(LowerArm, +armStep); break;
+                case "w": addTargetAngle(LowerArm, -armStep); break;
+
+                // Upper arm
+                case "f": addTargetAngle(UpperArm, +armStep); break;
+                case "r": addTargetAngle(UpperArm, -armStep); break;
+
+                // Gripper
+                case "o": addGripTarget(+gStep); motionStatus("Grip opening"); break;
+                case "p": addGripTarget(-gStep); motionStatus("Grip closing"); break;
+
+                // Record/Playback
+                case "g": toggleRecordMode(); break;
+                case "x":
+                    if (!recordMode) { motionStatus("Record Mode is OFF (press G)"); break; }
+                    savePose();
+                    break;
+                case " ":
+                    if (!recordMode) { motionStatus("Record Mode is OFF (press G)"); break; }
+                    savePose();
+                    break;
+                case "v":
+                    if (playMode) stopPlayMode();
+                    else startPlayMode();
+                    break;
+
+                // Speed control
+                case "+":
+                case "=": incSpeed(); break;
+                case "-":
+                case "_": decSpeed(); break;
+                    
+                // Automation controls
+                case "1": // Start automation
+                    if (gripperAutomation) gripperAutomation.startPickAndPlace();
+                    break;
+                case "2": // Stop automation
+                    if (gripperAutomation) gripperAutomation.stopAutomation();
+                    break;
+                case "3": // Reset arm
+                    if (gripperAutomation) gripperAutomation.resetArm();
+                    break;
+                case "4": // Open gripper
+                    if (gripperAutomation) gripperAutomation.openGripper();
+                    break;
+                case "5": // Close gripper
+                    if (gripperAutomation) gripperAutomation.closeGripper();
+                    break;
+                case "6":
+                    if (!object.isPicked) {
+                        // Manual pick
+                        object.isPicked = true;
+                        if (gripperAutomation) gripperAutomation.gripState.holdingObject = false; // prevent automation
+                        motionStatus("Manual pick: attached to gripper");
+                    } else {
+                        // Manual release
+                        object.isPicked = false;
+                        var dropPos = getGripperWorldPosition();
+                        object.position.x = dropPos[0];
+                        object.position.y = dropPos[1];
+                        object.position.z = dropPos[2];
+                        motionStatus("Manual release: dropped at gripper position");
+                    }
+                    break;
+            }
+        });
+        
+        console.log("Robot arm initialized successfully");
+        
+    } catch (error) {
+        console.error("Error in init:", error);
+        motionStatus("Initialization error: " + error.message);
     }
-
-
-    modelViewMatrixLoc = gl.getUniformLocation(program, "modelViewMatrix");
-
-    projectionMatrix = ortho(-10, 10, -10, 10, -10, 10);
-    gl.uniformMatrix4fv( gl.getUniformLocation(program, "projectionMatrix"),  false, flatten(projectionMatrix) );
-
-    setInitialPose(75, 35, 90, 0.55);
-    motionStatus("Lower Arm rotated to initial pose");
-    // test code deepseek 
-    gripperAutomation = new GripperAutomation({
-  // Pass references to arm control functions
-  setTargetAngle: setTargetAngle,
-  setGripTarget: setGripTarget,
-  motionStatus: motionStatus,
-  Base: Base,
-  LowerArm: LowerArm,
-  UpperArm: UpperArm,
-  theta: theta,
-  targetTheta: targetTheta,
-  grip: grip
-});
-
-// Update automation UI every 100ms
-setInterval(() => {
-  if (gripperAutomation) {
-    gripperAutomation.updateUI();
-  }
-}, 100);
-
-// Add automation keyboard shortcuts
-window.addEventListener("keydown", function(e) {
-  if (!gripperAutomation) return;
-  
-  var k = e.key.toLowerCase();
-  
-  switch (k) {
-    case "1": // Start automation
-      gripperAutomation.startPickAndPlace();
-      break;
-    case "2": // Stop automation
-      gripperAutomation.stopAutomation();
-      break;
-    case "3": // Reset arm
-      gripperAutomation.resetArm();
-      break;
-    case "4": // Open gripper
-      gripperAutomation.openGripper();
-      break;
-    case "5": // Close gripper
-      gripperAutomation.closeGripper();
-      break;
-  }
-});
-// end of testing code
-    render();
-    
-    window.addEventListener("keydown", function (e) {
-    var k = e.key;
-
-    // Keep precisionMode synced with CAPS LOCK
-    isPrecisionNow(e);
-
-    // Prevent spacebar scrolling the page
-    if (e.key === " ") e.preventDefault();
-
-    // Steps
-    var baseStep = currentStepDeg(e, "base");
-    var armStep  = currentStepDeg(e, "arm");
-    var gStep    = currentGripStep(e);
-
-    switch (k.toLowerCase()) {
-
-      // Q,A -> Move base (per your spec)
-      case "a": addTargetAngle(Base, +baseStep); break;
-      case "d": addTargetAngle(Base, -baseStep); break;
-
-      // W,S -> Move main arm (LowerArm)
-      case "s": addTargetAngle(LowerArm, +armStep); break;
-      case "w": addTargetAngle(LowerArm, -armStep); break;
-
-      // F,R -> Move forearm (UpperArm)
-      case "f": addTargetAngle(UpperArm, +armStep); break;
-      case "r": addTargetAngle(UpperArm, -armStep); break;
-
-      // O,P -> Move grip (open/close gap)
-      // (O = open, P = close)
-      case "o": addGripTarget(+gStep); motionStatus("Grip opening"); break;
-      case "p": addGripTarget(-gStep); motionStatus("Grip closing"); break;
-
-      // G -> Record Mode
-      case "g": toggleRecordMode(); break;
-
-      // X or Space -> Save a position (only if recordMode ON, if you want)
-      case "x":
-        if (!recordMode) { motionStatus("Record Mode is OFF (press G)"); break; }
-        savePose();
-        break;
-
-      case " ":
-        if (!recordMode) { motionStatus("Record Mode is OFF (press G)"); break; }
-        savePose();
-        break;
-
-      // V -> Play mode loop
-      case "v":
-        if (playMode) stopPlayMode();
-        else startPlayMode();
-        break;
-
-      // + / - -> speed
-      case "+":
-      case "=": // (shift+= often produces '+')
-        incSpeed(); break;
-
-      case "-":
-      case "_":
-        decSpeed(); break;
-    }
-  });
-
 }
 
 //----------------------------------------------------------------------------
 
-
 function base() {
-  // Main base body (wide + short)
+  // Main base body
   var mainS = scale(BASE_WIDTH, BASE_HEIGHT, BASE_WIDTH);
   var mainM = mult(translate(0.0, 0.5 * BASE_HEIGHT, 0.0), mainS);
-  drawCubeWithMatrix(mainM); // (this draws your CYLINDER now)
+  drawCubeWithMatrix(mainM);
 
   // Bevel parameters
   var bevelH = 0.25 * BASE_HEIGHT;
-  var bevelScale = 0.88; // smaller radius to look rounded
+  var bevelScale = 0.88;
 
-  // Top bevel (slightly smaller cylinder on top)
+  // Top bevel
   var topS = scale(BASE_WIDTH * bevelScale, bevelH, BASE_WIDTH * bevelScale);
   var topM = mat4();
   topM = mult(topM, translate(0.0, BASE_HEIGHT - 0.5 * bevelH, 0.0));
   topM = mult(topM, topS);
   drawCubeWithMatrix(topM);
 
-  // Bottom bevel (slightly smaller cylinder at bottom)
+  // Bottom bevel
   var botS = scale(BASE_WIDTH * bevelScale, bevelH, BASE_WIDTH * bevelScale);
   var botM = mat4();
   botM = mult(botM, translate(0.0, 0.5 * bevelH, 0.0));
@@ -609,34 +812,20 @@ function base() {
   drawCubeWithMatrix(botM);
 }
 
-
-//----------------------------------------------------------------------------
-
-
 function upperArm() {
     var s = scale(UPPER_ARM_WIDTH, UPPER_ARM_HEIGHT, UPPER_ARM_WIDTH);
-
-    var instanceMatrix = mult(translate( 0.0, 0.5 * UPPER_ARM_HEIGHT, 0.0 ),s);
-
+    var instanceMatrix = mult(translate(0.0, 0.5 * UPPER_ARM_HEIGHT, 0.0), s);
     var t = mult(modelViewMatrix, instanceMatrix);
-
-    gl.uniformMatrix4fv( modelViewMatrixLoc,  false, flatten(t)  );
-    gl.drawArrays( gl.TRIANGLES, 0, NumVertices );
+    gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(t));
+    gl.drawArrays(gl.TRIANGLES, 0, NumVertices);
 }
 
-//----------------------------------------------------------------------------
-
-
-function lowerArm()
-{
+function lowerArm() {
   var s = scale(LOWER_ARM_WIDTH, LOWER_ARM_HEIGHT, LOWER_ARM_WIDTH);
-  var instanceMatrix = mult( translate( 0.0, 0.5 * LOWER_ARM_HEIGHT, 0.0 ), s);
-
-
+  var instanceMatrix = mult(translate(0.0, 0.5 * LOWER_ARM_HEIGHT, 0.0), s);
   var t = mult(modelViewMatrix, instanceMatrix);
-  gl.uniformMatrix4fv( modelViewMatrixLoc,  false, flatten(t)   );
-  gl.drawArrays( gl.TRIANGLES, 0, NumVertices );
-
+  gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(t));
+  gl.drawArrays(gl.TRIANGLES, 0, NumVertices);
 }
 
 function drawCubeWithMatrix(instanceMatrix) {
@@ -645,50 +834,44 @@ function drawCubeWithMatrix(instanceMatrix) {
   gl.drawArrays(gl.TRIANGLES, 0, NumVertices);
 }
 
-// A nicer-looking claw: palm + 2-segment fingers with inward tips
 function gripper() {
   // Attach at end of upper arm
   var saved = modelViewMatrix;
   modelViewMatrix = mult(modelViewMatrix, translate(0.0, UPPER_ARM_HEIGHT, 0.0));
   modelViewMatrix = mult(modelViewMatrix, rotate(-90, vec3(0, 1, 0)));
   
-
-  // ---- Wrist / Palm block ----
+  // Palm block
   var PALM_W = 1.0;
   var PALM_H = 0.35;
   var PALM_D = 0.55;
 
   {
     var sPalm = scale(PALM_W, PALM_H, PALM_D);
-    // center palm on the joint tip (slightly forward if you want)
     var palmM = mult(translate(0.0, 0.5 * PALM_H, 0.0), sPalm);
     drawCubeWithMatrix(palmM);
   }
 
-  // ---- Finger parameters ----
-  var F_W = 0.16;      // finger thickness
-  var F_D = 0.16;      // finger depth
-  var F1_L = 0.85;     // base segment length
-  var F2_L = 0.65;     // tip segment length
+  // Finger parameters
+  var F_W = 0.16;
+  var F_D = 0.16;
+  var F1_L = 0.85;
+  var F2_L = 0.65;
 
-  var GAP = grip.open;      // distance between left/right fingers
-  var BASE_Y = PALM_H; // start fingers above palm
-  var OUT_ANGLE = 10;  // small outward angle
-  var IN_ANGLE  = 25;  // tip bends inward
+  var GAP = grip.open;
+  var BASE_Y = PALM_H;
+  var OUT_ANGLE = 10;
+  var IN_ANGLE  = 25;
 
-  // helper to draw one finger (side = -1 left, +1 right)
+  // helper to draw one finger
   function finger(side) {
-    // start at palm top, shifted left/right
     var fingerBase = mat4();
     fingerBase = mult(fingerBase, translate(side * (GAP * 0.5), BASE_Y, 0.0));
-
-    // Base segment: slightly angled outward
     var baseRot = rotate(side * OUT_ANGLE, vec3(0, 0, 1));
     var baseSeg = mat4();
     baseSeg = mult(baseSeg, fingerBase);
     baseSeg = mult(baseSeg, baseRot);
 
-    // draw base segment centered along its length
+    // Base segment
     {
       var s1 = scale(F_W, F1_L, F_D);
       var m1 = mult(baseSeg, translate(0.0, 0.5 * F1_L, 0.0));
@@ -696,11 +879,11 @@ function gripper() {
       drawCubeWithMatrix(m1);
     }
 
-    // Tip segment: continue from end of base, bend inward
+    // Tip segment
     var tipSeg = mat4();
     tipSeg = mult(tipSeg, baseSeg);
-    tipSeg = mult(tipSeg, translate(0.0, F1_L, 0.0)); // move to end of base
-    tipSeg = mult(tipSeg, rotate(-side * IN_ANGLE, vec3(0, 0, 1))); // bend inward
+    tipSeg = mult(tipSeg, translate(0.0, F1_L, 0.0));
+    tipSeg = mult(tipSeg, rotate(-side * IN_ANGLE, vec3(0, 0, 1)));
 
     {
       var s2 = scale(F_W, F2_L, F_D);
@@ -711,34 +894,98 @@ function gripper() {
   }
 
   // draw both fingers
-  finger(-1); // left
-  finger(+1); // right
+  finger(-1);
+  finger(+1);
+
+  if (object.isPicked) {
+    var saved2 = modelViewMatrix;
+
+    // Move to center between fingers
+    modelViewMatrix = mult(modelViewMatrix, translate(0.0, 0.8, 0.1));
+
+    modelViewMatrix = mult(modelViewMatrix, scale(
+        object.size.width,
+        object.size.height,
+        object.size.depth
+    ));
+
+    drawColoredCube(getObjectColorVec());
+
+    modelViewMatrix = saved2;
+  }
 
   modelViewMatrix = saved;
 }
 
-
-//----------------------------------------------------------------------------
-
-
 function render() {
+    try {
+        // Clear the canvas
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-    gl.clear( gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT );
+        // Update playback if needed
+        updatePlayback();
 
-    updatePlayback();
-    updateSmoothAngles();
+        // Smoothly update joint angles and gripper
+        updateSmoothAngles();
 
-    modelViewMatrix = rotate(theta[Base], vec3(0, 1, 0 ));
-    base();
+        // Update automation steps (pick/place)
+        if (gripperAutomation) {
+            gripperAutomation.update();
+        }
 
-    modelViewMatrix = mult(modelViewMatrix, translate(0.0, BASE_HEIGHT, 0.0));
-    modelViewMatrix = mult(modelViewMatrix, rotate(theta[LowerArm], vec3(0, 0, 1 )));
-    lowerArm();
+        // Initialize modelViewMatrix if not already done
+        if (!modelViewMatrix) {
+            modelViewMatrix = mat4();
+        }
 
-    modelViewMatrix  = mult(modelViewMatrix, translate(0.0, LOWER_ARM_HEIGHT, 0.0));
-    modelViewMatrix  = mult(modelViewMatrix, rotate(theta[UpperArm], vec3(0, 0, 1)) );
+        // Save current matrix for object drawing
+        var originalMatrix = modelViewMatrix;
 
-    upperArm();
-    gripper();
-    requestAnimationFrame(render);
+        // -------------------------
+        // DRAW OBJECT FIRST (world space)
+        // -------------------------
+        drawObject();
+
+        // Reset modelViewMatrix for robot arm
+        modelViewMatrix = mat4();
+
+        // -------------------------
+        // DRAW ROBOT ARM
+        // -------------------------
+
+        // Base rotation
+        modelViewMatrix = rotate(theta[Base], vec3(0, 1, 0));
+        base();
+
+        // Lower arm
+        modelViewMatrix = mult(modelViewMatrix, translate(0.0, BASE_HEIGHT, 0.0));
+        modelViewMatrix = mult(modelViewMatrix, rotate(theta[LowerArm], vec3(0, 0, 1)));
+        lowerArm();
+
+        // Upper arm
+        modelViewMatrix = mult(modelViewMatrix, translate(0.0, LOWER_ARM_HEIGHT, 0.0));
+        modelViewMatrix = mult(modelViewMatrix, rotate(theta[UpperArm], vec3(0, 0, 1)));
+        upperArm();
+
+        // Gripper
+        gripper();
+
+        // -------------------------
+        // Restore original matrix
+        // -------------------------
+        modelViewMatrix = originalMatrix;
+
+        // Continue animation loop
+        requestAnimationFrame(render);
+
+    } catch (error) {
+        console.error("Error in render:", error);
+
+        // Attempt to recover
+        modelViewMatrix = mat4();
+        motionStatus("Render error: " + error.message);
+
+        // Continue rendering even after error
+        requestAnimationFrame(render);
+    }
 }

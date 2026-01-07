@@ -4,124 +4,386 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>WebGL Robotic Arm – Controls</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+    
+    header {
+      background-color: #2c3e50;
+      color: white;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    
+    main {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    
+    @media (max-width: 768px) {
+      main {
+        grid-template-columns: 1fr;
+      }
+    }
+    
+    section {
+      background-color: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    fieldset {
+      border: 2px solid #3498db;
+      border-radius: 6px;
+      padding: 15px;
+      margin-bottom: 15px;
+    }
+    
+    legend {
+      font-weight: bold;
+      color: #2c3e50;
+      padding: 0 10px;
+    }
+    
+    button {
+      background-color: #3498db;
+      color: white;
+      border: none;
+      padding: 10px 15px;
+      margin: 5px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background-color 0.3s;
+    }
+    
+    button:hover {
+      background-color: #2980b9;
+    }
+    
+    button:disabled {
+      background-color: #95a5a6;
+      cursor: not-allowed;
+    }
+    
+    #start-auto-btn {
+      background-color: #27ae60;
+    }
+    
+    #start-auto-btn:hover {
+      background-color: #219653;
+    }
+    
+    #stop-auto-btn {
+      background-color: #e74c3c;
+    }
+    
+    #stop-auto-btn:hover {
+      background-color: #c0392b;
+    }
+    
+    #reset-arm-btn {
+      background-color: #f39c12;
+    }
+    
+    #reset-arm-btn:hover {
+      background-color: #d68910;
+    }
+    
+    input[type="range"] {
+      width: 100%;
+      margin: 10px 0;
+    }
+    
+    #status {
+      background-color: #ecf0f1;
+      padding: 15px;
+      border-radius: 4px;
+      margin-top: 10px;
+      font-family: monospace;
+      font-size: 14px;
+      min-height: 40px;
+      border-left: 4px solid #3498db;
+    }
+    
+    #gl-canvas {
+      width: 512px;
+      height: 512px;
+      border: 2px solid #2c3e50;
+      border-radius: 4px;
+      background-color: white;
+      display: block;
+      margin: 20px auto;
+    }
+    
+    .automation-status {
+      background-color: #f8f9fa;
+      padding: 15px;
+      border-radius: 6px;
+      margin-top: 15px;
+      border: 1px solid #dee2e6;
+    }
+    
+    .automation-status p {
+      margin: 5px 0;
+      padding: 5px;
+      border-bottom: 1px solid #eee;
+    }
+    
+    .automation-status span {
+      font-weight: bold;
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+    
+    #holding-state {
+      background-color: #ff6b6b;
+      color: white;
+    }
+    
+    #holding-state[data-holding="true"] {
+      background-color: #51cf66;
+    }
+    
+    #auto-state[data-state="active"] {
+      background-color: #51cf66;
+      color: white;
+    }
+    
+    #auto-state[data-state="idle"] {
+      background-color: #868e96;
+      color: white;
+    }
+    
+    #gripper-state[data-state="open"] {
+      background-color: #339af0;
+      color: white;
+    }
+    
+    #gripper-state[data-state="closed"] {
+      background-color: #fa5252;
+      color: white;
+    }
+    
+    ul {
+      padding-left: 20px;
+    }
+    
+    li {
+      margin-bottom: 8px;
+    }
+    
+    b {
+      color: #2c3e50;
+    }
+    
+    output {
+      display: inline-block;
+      min-width: 40px;
+      font-weight: bold;
+      color: #2c3e50;
+    }
+    
+    .keyboard-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 10px;
+    }
+  </style>
 </head>
 
 <body>
 
   <header>
-    <h2>WebGL Robotic Arm</h2>
-    <p>Use sliders or keyboard to control joints and gripper.</p>
+    <h2>🤖 WebGL Robotic Arm with Pick & Place</h2>
+    <p>Control the robotic arm manually or run automated pick-and-place operations.</p>
   </header>
 
   <main>
-    <!-- Automation Controls -->
-    <section aria-labelledby="automation-title">
-      <h3 id="automation-title">Automation Controls</h3>
-      
-      <fieldset>
-        <legend>Pick-and-Place Automation</legend>
+    <!-- Left Column: Controls -->
+    <div>
+      <!-- Automation Controls -->
+      <section aria-labelledby="automation-title">
+        <h3 id="automation-title">🎯 Automation Controls</h3>
         
-        <div>
-          <button id="start-auto-btn" onclick="gripperAutomation.startPickAndPlace()">▶ Start Automation</button>
-          <button id="stop-auto-btn" onclick="gripperAutomation.stopAutomation()" disabled>⏹ Stop</button>
-          <button id="reset-arm-btn" onclick="gripperAutomation.resetArm()">↻ Reset Arm</button>
+        <fieldset>
+          <legend>Pick-and-Place Automation</legend>
+          
+          <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 15px;">
+            <button id="start-auto-btn" onclick="if (gripperAutomation) gripperAutomation.startPickAndPlace()">
+              ▶ Start Automation
+            </button>
+            <button id="stop-auto-btn" onclick="if (gripperAutomation) gripperAutomation.stopAutomation()" disabled>
+              ⏹ Stop
+            </button>
+            <button id="reset-arm-btn" onclick="if (gripperAutomation) gripperAutomation.resetArm()">
+              ↻ Reset Arm
+            </button>
+          </div>
+          
+          <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 15px;">
+            <button onclick="if (gripperAutomation) gripperAutomation.openGripper()">
+              ⇄ Open Gripper
+            </button>
+            <button onclick="if (gripperAutomation) gripperAutomation.closeGripper()">
+              ⇶ Close Gripper
+            </button>
+          </div>
+          
+          <div class="automation-status">
+            <p><strong>Automation State:</strong> <span id="auto-state" data-state="idle">Idle</span></p>
+            <p><strong>Gripper State:</strong> <span id="gripper-state" data-state="open">Open</span></p>
+            <p><strong>Holding Object:</strong> <span id="holding-state" data-holding="false">No</span></p>
+            <p><strong>Step:</strong> <span id="step-state">Idle</span></p>
+          </div>
+        </fieldset>
+      </section>
+
+      <!-- Manual Controls -->
+      <section aria-labelledby="controls-title">
+        <h3 id="controls-title">🎮 Manual Controls</h3>
+
+        <fieldset>
+          <legend>Joint Angles</legend>
+
+          <div>
+            <label for="slider1">Base Rotation (-180° to 180°):</label>
+            <input id="slider1" type="range" min="-180" max="180" step="1" value="0" />
+            <output id="out1">0°</output>
+          </div>
+
+          <div style="margin-top: 15px;">
+            <label for="slider2">Lower Arm (-90° to 90°):</label>
+            <input id="slider2" type="range" min="-90" max="90" step="1" value="35" />
+            <output id="out2">35°</output>
+          </div>
+
+          <div style="margin-top: 15px;">
+            <label for="slider3">Upper Arm (-90° to 90°):</label>
+            <input id="slider3" type="range" min="-90" max="90" step="1" value="45" />
+            <output id="out3">45°</output>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Gripper</legend>
+
+          <div>
+            <label for="slider4">Gripper Opening (0% to 100%):</label>
+            <input id="slider4" type="range" min="0" max="100" step="1" value="100" />
+            <output id="out4">100%</output>
+          </div>
+          
+          <div style="margin-top: 15px; font-size: 12px; color: #666;">
+            <p><strong>Object Status:</strong> <span id="object-status">On ground (x=5)</span></p>
+          </div>
+        </fieldset>
+      </section>
+    </div>
+
+    <!-- Right Column: Information -->
+    <div>
+      <!-- Keyboard Help -->
+      <section aria-labelledby="keys-title">
+        <h3 id="keys-title">⌨️ Keyboard Shortcuts</h3>
+        
+        <div class="keyboard-grid">
+          <div>
+            <h4>Arm Control</h4>
+            <ul>
+              <li><b>A / D</b> = Base rotation</li>
+              <li><b>W / S</b> = Lower arm</li>
+              <li><b>R / F</b> = Upper arm</li>
+              <li><b>O / P</b> = Gripper open/close</li>
+            </ul>
+          </div>
+          
+          <div>
+            <h4>Automation</h4>
+            <ul>
+              <li><b>1</b> = Start Automation</li>
+              <li><b>2</b> = Stop Automation</li>
+              <li><b>3</b> = Reset Arm</li>
+              <li><b>4</b> = Open Gripper</li>
+              <li><b>5</b> = Close Gripper</li>
+              <li><b>6</b> = Toggle Object Pick</li>
+            </ul>
+          </div>
+          
+          <div>
+            <h4>Recording</h4>
+            <ul>
+              <li><b>G</b> = Toggle Record mode</li>
+              <li><b>X / Space</b> = Save position</li>
+              <li><b>V</b> = Play mode (loop)</li>
+            </ul>
+          </div>
+          
+          <div>
+            <h4>Settings</h4>
+            <ul>
+              <li><b>Caps Lock</b> = Precision mode</li>
+              <li><b>+ / -</b> = Change speed</li>
+            </ul>
+          </div>
         </div>
         
-        <div style="margin-top: 10px;">
-          <button onclick="gripperAutomation.openGripper()">⇄ Open Gripper</button>
-          <button onclick="gripperAutomation.closeGripper()">⇶ Close Gripper</button>
+        <div style="margin-top: 15px; padding: 10px; background-color: #e8f4f8; border-radius: 4px;">
+          <p><strong>💡 Tip:</strong> Press <b>1</b> to start the pick-and-place automation. The arm will:</p>
+          <ol style="margin: 5px 0 0 20px;">
+            <li>Move to the red box</li>
+            <li>Pick it up</li>
+            <li>Move to the other side</li>
+            <li>Place it down</li>
+            <li>Return to home position</li>
+          </ol>
+        </div>
+      </section>
+
+      <!-- Status -->
+      <section aria-labelledby="status-title">
+        <h3 id="status-title">📊 Status Monitor</h3>
+        <div id="status" role="status" aria-live="polite">
+          Initializing robotic arm...
         </div>
         
-        <div style="margin-top: 10px; font-size: 14px;">
-          <p><strong>Automation State:</strong> <span id="auto-state">Idle</span></p>
-          <p><strong>Gripper State:</strong> <span id="gripper-state">Open</span></p>
-          <p><strong>Holding Object:</strong> <span id="holding-state">No</span></p>
-          <p><strong>Step:</strong> <span id="step-state">Idle</span></p>
+        <div style="margin-top: 15px;">
+          <h4>Current Positions:</h4>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <div>
+              <p><strong>Base:</strong> <span id="current-base">0°</span></p>
+              <p><strong>Lower Arm:</strong> <span id="current-lower">35°</span></p>
+              <p><strong>Upper Arm:</strong> <span id="current-upper">45°</span></p>
+            </div>
+            <div>
+              <p><strong>Gripper:</strong> <span id="current-grip">55%</span></p>
+              <p><strong>Speed:</strong> <span id="current-speed">1.0x</span></p>
+              <p><strong>Mode:</strong> <span id="current-mode">Normal</span></p>
+            </div>
+          </div>
         </div>
-        
-        <div style="margin-top: 10px; font-size: 12px; color: #666;">
-          <p><strong>Keyboard Shortcuts:</strong></p>
-          <p>1: Start Automation</p>
-          <p>2: Stop Automation</p>
-          <p>3: Reset Arm</p>
-          <p>4: Open Gripper</p>
-          <p>5: Close Gripper</p>
+      </section>
+
+      <!-- Viewport -->
+      <section aria-labelledby="view-title">
+        <h3 id="view-title">👁️ Viewport</h3>
+        <canvas id="gl-canvas" width="512" height="512">
+          Your browser does not support the HTML canvas element.
+        </canvas>
+        <div style="text-align: center; margin-top: 10px; font-size: 12px; color: #666;">
+          <p>Red cube = Object to pick up</p>
+          <p>Blue/yellow = Robot arm components</p>
         </div>
-      </fieldset>
-    </section>
-
-    <!-- Controls -->
-    <section aria-labelledby="controls-title">
-      <h3 id="controls-title">Controls</h3>
-
-      <fieldset>
-        <legend>Joint Angles</legend>
-
-        <p>
-          <label for="slider1">Body angle (-180 to 180):</label><br />
-          <input id="slider1" type="range" min="-180" max="180" step="10" value="0" />
-          <output id="out1">0</output>°
-        </p>
-
-        <p>
-          <label for="slider2">Lower arm angle (-180 to 180):</label><br />
-          <input id="slider2" type="range" min="-180" max="180" step="10" value="0" />
-          <output id="out2">0</output>°
-        </p>
-
-        <p>
-          <label for="slider3">Upper arm angle (-180 to 180):</label><br />
-          <input id="slider3" type="range" min="-180" max="180" step="10" value="0" />
-          <output id="out3">0</output>°
-        </p>
-      </fieldset>
-
-      <fieldset>
-        <legend>Gripper</legend>
-
-        <p>
-          <label for="slider4">Gripper open (0 = close, 100 = open):</label><br />
-          <input id="slider4" type="range" min="0" max="100" step="1" value="100" />
-          <output id="out4">100</output>
-        </p>
-      </fieldset>
-    </section>
-
-    <!-- Keyboard help -->
-    <section aria-labelledby="keys-title">
-      <h3 id="keys-title">Keyboard Shortcuts</h3>
-
-      <ul>
-        <li><b>A / D</b> = Base (10° / 1° precision)</li>
-        <li><b>W / S</b> = Main arm</li>
-        <li><b>R / F</b> = Forearm</li>
-        <li><b>O / P</b> = Grip</li>
-        <li><b>G</b> = Record mode</li>
-        <li><b>X</b> or <b>Space</b> = Save position</li>
-        <li><b>V</b> = Play mode (loop)</li>
-        <li><b>Caps Lock</b> = Precision mode</li>
-        <li><b>+</b> / <b>-</b> = Change movement speed</li>
-        <li><b>1</b> = Start Automation</li>
-        <li><b>2</b> = Stop Automation</li>
-        <li><b>3</b> = Reset Arm</li>
-        <li><b>4</b> = Open Gripper</li>
-        <li><b>5</b> = Close Gripper</li>
-      </ul>
-    </section>
-
-    <!-- Status -->
-    <section aria-labelledby="status-title">
-      <h3 id="status-title">Status</h3>
-      <div id="status" role="status" aria-live="polite">Ready.</div>
-    </section>
-
-    <!-- Canvas -->
-    <section aria-labelledby="view-title">
-      <h3 id="view-title">Viewport</h3>
-      <canvas id="gl-canvas" width="512" height="512">
-        Your browser does not support the HTML canvas element.
-      </canvas>
-    </section>
+      </section>
+    </div>
   </main>
 
   <!-- Shaders -->
@@ -160,21 +422,106 @@ void main()
   <script src="autoAnimation.js"></script>
   <script src="robotArm.js"></script>
 
-  <!-- Small UX helper (no CSS): show slider values beside outputs -->
+  <!-- Enhanced UX helper -->
   <script>
     (function () {
+      // Bind sliders to outputs
       function bind(sliderId, outputId) {
         var s = document.getElementById(sliderId);
         var o = document.getElementById(outputId);
         if (!s || !o) return;
         o.value = s.value;
-        s.addEventListener("input", function () { o.value = s.value; });
+        s.addEventListener("input", function () { 
+          o.value = s.value + (sliderId === 'slider4' ? '%' : '°');
+        });
       }
+      
       bind("slider1", "out1");
       bind("slider2", "out2");
       bind("slider3", "out3");
       bind("slider4", "out4");
+      
+      // Update current positions display
+      function updateCurrentPositions() {
+        if (typeof theta !== 'undefined') {
+          document.getElementById('current-base').textContent = theta[0].toFixed(1) + '°';
+          document.getElementById('current-lower').textContent = theta[1].toFixed(1) + '°';
+          document.getElementById('current-upper').textContent = theta[2].toFixed(1) + '°';
+        }
+        if (typeof grip !== 'undefined') {
+          var gripPercent = ((grip.open - grip.min) / (grip.max - grip.min) * 100).toFixed(0);
+          document.getElementById('current-grip').textContent = gripPercent + '%';
+        }
+        if (typeof speedMult !== 'undefined') {
+          document.getElementById('current-speed').textContent = speedMult.toFixed(1) + 'x';
+        }
+        if (typeof precisionMode !== 'undefined') {
+          document.getElementById('current-mode').textContent = precisionMode ? 'Precision' : 'Normal';
+        }
+        
+        // Update object status
+        if (typeof object !== 'undefined') {
+          var statusEl = document.getElementById('object-status');
+          if (object.isPicked) {
+            statusEl.textContent = 'Picked up (following gripper)';
+            statusEl.style.color = '#27ae60';
+          } else {
+            statusEl.textContent = 'On ground (x=' + object.position.x.toFixed(1) + ')';
+            statusEl.style.color = '#e74c3c';
+          }
+        }
+      }
+      
+      // Update UI every 100ms
+      setInterval(updateCurrentPositions, 100);
+      
+      // Initialize
+      document.addEventListener('DOMContentLoaded', function() {
+        setTimeout(updateCurrentPositions, 1000); // Wait for robotArm.js to load
+      });
+      
+      // Add keyboard shortcuts help
+      document.addEventListener('keydown', function(e) {
+        // Update precision mode display
+        if (e.key === 'CapsLock') {
+          setTimeout(function() {
+            document.getElementById('current-mode').textContent = 
+              e.getModifierState('CapsLock') ? 'Precision' : 'Normal';
+          }, 100);
+        }
+      });
+      
     })();
+    
+    // Global function for manual object pick toggle
+    function toggleObjectPick() {
+      if (typeof object !== 'undefined') {
+        object.isPicked = !object.isPicked;
+        if (object.isPicked) {
+          motionStatus("Manually picked object");
+        } else {
+          motionStatus("Manually released object");
+        }
+      }
+    }
+    
+    // Function to update button states
+    function updateAutomationButtons() {
+      var startBtn = document.getElementById('start-auto-btn');
+      var stopBtn = document.getElementById('stop-auto-btn');
+      var resetBtn = document.getElementById('reset-arm-btn');
+      
+      if (gripperAutomation) {
+        var status = gripperAutomation.getStatus();
+        stopBtn.disabled = !status.active;
+        startBtn.disabled = status.active;
+        resetBtn.disabled = status.active;
+      }
+    }
+    
+    // Update automation button states every 500ms
+    setInterval(updateAutomationButtons, 500);
+    
   </script>
 
 </body>

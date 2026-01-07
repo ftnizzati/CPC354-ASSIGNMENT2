@@ -265,6 +265,7 @@ function mat3()
 
 //----------------------------------------------------------------------------
 
+// In the mat4() function, replace this section:
 function mat4()
 {
     //var v = _argumentsToArray( arguments );
@@ -275,31 +276,49 @@ function mat4()
     out[2] = new Array(4);
     out[3] = new Array(4);
 
+    // Initialize all elements to 0 first
+    for (var i = 0; i < 4; i++) {
+        for (var j = 0; j < 4; j++) {
+            out[i][j] = 0.0;
+        }
+    }
+
     switch ( arguments.length ) {
     case 0:
-      out[0][0]=out[1][1]=out[2][2]=out[3][3] = 1.0;
-      out[0][1]=out[0][2]=out[0][3]=out[1][0]=out[1][2]=out[1][3]=out[2][0]=out[2][1]
-        =out[2][3]=out[3][0]=out[3][1]=out[3][2]=0.0;
-
+      out[0][0] = out[1][1] = out[2][2] = out[3][3] = 1.0;
       break;
 
     case 1:
-      for(var i=0; i<4; i++) for(var i=0; i<4; i++) {
-        out[i][j]=arguments[0][4*i+j];
+      if (arguments[0] && arguments[0].type === "mat4") {
+        for(var i = 0; i < 4; i++) {
+          for(var j = 0; j < 4; j++) {
+            out[i][j] = arguments[0][i][j];
+          }
+        }
+      } else if (Array.isArray(arguments[0]) && arguments[0].length >= 16) {
+        for(var i = 0; i < 4; i++) {
+          for(var j = 0; j < 4; j++) {
+            out[i][j] = arguments[0][4*i+j];
+          }
+        }
       }
       break;
 
     case 4:
-      if(arguments[0].type == "vec4") {
-      for( var i=0; i<4; i++)
-        for(var j=0; j<4; j++)
-          out[i][j] = arguments[i][j];
-       break;
+      if(arguments[0] && arguments[0].type === "vec4") {
+        for(var i = 0; i < 4; i++) {
+          for(var j = 0; j < 4; j++) {
+            out[i][j] = arguments[i][j];
+          }
+        }
       }
+      break;
 
     case 16:
-      for(var i=0; i<4; i++) for(var j=0; j<4; j++) {
-        out[i][j] = arguments[4*i+j];
+      for(var i = 0; i < 4; i++) {
+        for(var j = 0; j < 4; j++) {
+          out[i][j] = arguments[4*i+j];
+        }
       }
       break;
     }
@@ -392,9 +411,14 @@ function subtract( u, v )
 
 function mult( u, v )
 {
+  // Check for undefined/null inputs
+  if (!u || !v) {
+    throw "mult: one or both arguments are undefined";
+  }
 
-  if(typeof(u)=="number" && (isMatrix(v)||isVector(v))) {
-
+  // Handle scalar multiplication
+  if(typeof u == "number" && (isMatrix(v)||isVector(v))) {
+    var result;
     if(isVector(v)){
       result = new Array(v.length);
       result.type = v.type;
@@ -403,68 +427,91 @@ function mult( u, v )
       }
       return result;
     }
-   if(v.type = 'mat2') result = mat2();
-   if(v.type = 'mat3') result = mat3();
-   if(v.type = 'mat4') result = mat4();
-  }
-  if(u.type=='mat2' && v.type == 'vec2') {
-    var result = vec2();
-    for(i=0;i<2;i++)  {
-      result[i] = 0.0;
-      for(var k=0;k<2;k++) result[i]+=u[i][k]*v[k];
+    if(v.type == 'mat2') result = mat2();
+    if(v.type == 'mat3') result = mat3();
+    if(v.type == 'mat4') result = mat4();
+    
+    for(var i =0; i<v.length; i++) {
+      for(var j=0; j<v[i].length; j++) {
+        result[i][j] = u * v[i][j];
+      }
     }
     return result;
   }
-  if(u.type=='mat3'&& v.type=='vec3') {
-    var result = vec3();
-    for(i=0;i<3;i++)  {
-      result[i] = 0.0;
-      for(var k=0;k<3;k++) result[i]+=u[i][k]*v[k];
-    }
-    return result;
-  }
-  if(u.type=='mat4'&& v.type=='vec4')  {
-    var result = vec4();
-    for(i=0;i<4;i++)  {
-      result[i] = 0.0;
-      for(var k=0;k<4;k++) result[i]+=u[i][k]*v[k];
-    }
-    return result;
-  }
- if (u.type=='mat2'&&v.type=='mat2'){
-    result = mat2();
-    for(i=0;i<2;i++) for(j=0;j<2;j++) {
-      result[i][j] = 0.0;
-      for(var k=0;k<2;k++) result[i][j]+=u[i][k]*v[k][j];
-    }
-    return result;
-  }
- if (u.type=='mat3'&&v.type=='mat3'){
-    result = mat3();
-    for(i=0;i<3;i++) for(j=0;j<3;j++) {
-      result[i][j] = 0.0;
-      for(var k=0;k<3;k++) result[i][j]+=u[i][k]*v[k][j];
-    }
-    return result;
-  }
-  else if (u.type=='mat4'&&v.type=='mat4'){
-    result = mat4();
-    for(i=0;i<4;i++) for(j=0;j<4;j++) {
-      result[i][j] = 0.0;
-      for(var k=0;k<4;k++) result[i][j]+=u[i][k]*v[k][j];
-    }
 
+  // Check types exist
+  if (!u.type || !v.type) {
+    throw "mult: arguments missing type property";
+  }
+
+  // Matrix-vector multiplication
+  if(u.type == 'mat2' && v.type == 'vec2') {
+    var result = vec2();
+    for(var i=0; i<2; i++)  {
+      result[i] = 0.0;
+      for(var k=0; k<2; k++) result[i] += u[i][k]*v[k];
+    }
     return result;
   }
-  if (u.type=='vec3'&&v.type=='vec3'){
+  
+  if(u.type == 'mat3' && v.type == 'vec3') {
+    var result = vec3();
+    for(var i=0; i<3; i++)  {
+      result[i] = 0.0;
+      for(var k=0; k<3; k++) result[i] += u[i][k]*v[k];
+    }
+    return result;
+  }
+  
+  if(u.type == 'mat4' && v.type == 'vec4')  {
+    var result = vec4();
+    for(var i=0; i<4; i++)  {
+      result[i] = 0.0;
+      for(var k=0; k<4; k++) result[i] += u[i][k]*v[k];
+    }
+    return result;
+  }
+  
+  // Matrix-matrix multiplication
+  if (u.type == 'mat2' && v.type == 'mat2'){
+    var result = mat2();
+    for(var i=0; i<2; i++) for(var j=0; j<2; j++) {
+      result[i][j] = 0.0;
+      for(var k=0; k<2; k++) result[i][j] += u[i][k]*v[k][j];
+    }
+    return result;
+  }
+  
+  if (u.type == 'mat3' && v.type == 'mat3'){
+    var result = mat3();
+    for(var i=0; i<3; i++) for(var j=0; j<3; j++) {
+      result[i][j] = 0.0;
+      for(var k=0; k<3; k++) result[i][j] += u[i][k]*v[k][j];
+    }
+    return result;
+  }
+  
+  if (u.type == 'mat4' && v.type == 'mat4'){
+    var result = mat4();
+    for(var i=0; i<4; i++) for(var j=0; j<4; j++) {
+      result[i][j] = 0.0;
+      for(var k=0; k<4; k++) result[i][j] += u[i][k]*v[k][j];
+    }
+    return result;
+  }
+  
+  // Vector-vector multiplication (element-wise)
+  if (u.type == 'vec3' && v.type == 'vec3'){
     var result = vec3(u[0]*v[0], u[1]*v[1], u[2]*v[2]);
     return result;
   }
-  if (u.type=='vec4'&&v.type=='vec4'){
+  
+  if (u.type == 'vec4' && v.type == 'vec4'){
     var result = vec4(u[0]*v[0], u[1]*v[1], u[2]*v[2], u[3]*v[3]);
     return result;
   }
-    throw "mult(): trying to mult incompatible types";
+  
+  throw "mult: trying to multiply incompatible types: " + (u.type || "undefined") + " and " + (v.type || "undefined");
 }
 
 
