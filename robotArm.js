@@ -15,7 +15,7 @@ var LOWER_ARM_HEIGHT = 5.0;
 var LOWER_ARM_WIDTH  = 0.5;
 var UPPER_ARM_HEIGHT = 5.0;
 var UPPER_ARM_WIDTH  = 0.5;
-
+var manualControlActive = false; // Add this to track manual vs auto control
 // Shader transformation matrices
 var modelViewMatrix, projectionMatrix;
 
@@ -81,8 +81,6 @@ function getGripperWorldPosition() {
     // Start from identity matrix
     var m = mat4();
     
-    // IMPORTANT: Apply transformations in reverse order of how they're drawn
-    
     // 1. Base rotation (Y axis)
     m = mult(m, rotate(theta[0], vec3(0, 1, 0)));
     
@@ -95,16 +93,17 @@ function getGripperWorldPosition() {
     m = mult(m, rotate(theta[2], vec3(0, 0, 1)));
     
     // 4. Move to end of upper arm (gripper attachment point)
-    m = mult(m, translate(0.0, UPPER_ARM_HEIGHT, 0.0));
+    // We subtract 0.2 because the gripper() function draws at UPPER_ARM_HEIGHT - 0.2
+    m = mult(m, translate(0.0, UPPER_ARM_HEIGHT - 0.2, 0.0));
     
-    // 5. Rotate gripper to face forward (depends on your gripper orientation)
-    // Try different values here if this doesn't work:
+    // 5. Rotate gripper to match the drawing orientation
     m = mult(m, rotate(-90, vec3(0, 1, 0)));
     
-    // 6. Move to center of gripper jaws
-    m = mult(m, translate(0.0, 0.2, 0.0));  // Adjust this value!
+    // 6. Move to the center of the gripper fingers
+    // This value (0.65) MUST match the translate call in your gripper() HELD OBJECT section
+    m = mult(m, translate(0.0, 0.65, 0.0)); 
     
-    // Return as array [x, y, z]
+    // Return the translation component (column 3, rows 0,1,2)
     return [m[0][3], m[1][3], m[2][3]];
 }
 
@@ -129,7 +128,49 @@ function isGripperAtBox() {
     return distance < 0.6;   // IMPORTANT: increased tolerance
 }
 
+// Improved grip detection
+function checkGripObject() {
+    // If the user is in manual mode (Key 6), do not allow 
+    // the automatic logic to interfere with the pick/release state.
+    if (manualControlActive) {
+        return; 
+    }
+    
+    if (object.isPicked) {
+        // Automatic release only happens if NOT in manual mode
+        if (grip.open > 0.7) { 
+            object.isPicked = false;
+            motionStatus("Auto-release: Object dropped");
+        }
+    } else {
+        // Automatic grip only happens if NOT in manual mode
+        // This prevents the box from "re-attaching" immediately after a manual release
+        if (grip.open < 0.55 && isGripperNearObject()) {
+            object.isPicked = true;
+            motionStatus("Auto-grip: Object picked");
+        }
+    }
+}
 
+// Debug function to show gripper status
+function debugGripperStatus() {
+    console.log("=== Gripper Debug ===");
+    console.log("Grip open value:", grip.open.toFixed(2));
+    console.log("Target open:", grip.targetOpen.toFixed(2));
+    console.log("Min:", grip.min.toFixed(2), "Max:", grip.max.toFixed(2));
+    console.log("Object is picked:", object.isPicked);
+    console.log("Object position:", object.position.x.toFixed(2), object.position.y.toFixed(2), object.position.z.toFixed(2));
+    
+    var gripperPos = getGripperWorldPosition();
+    console.log("Gripper position:", gripperPos[0].toFixed(2), gripperPos[1].toFixed(2), gripperPos[2].toFixed(2));
+    
+    var distance = Math.sqrt(
+        Math.pow(gripperPos[0] - object.position.x, 2) +
+        Math.pow(gripperPos[1] - object.position.y, 2) +
+        Math.pow(gripperPos[2] - object.position.z, 2)
+    );
+    console.log("Distance to object:", distance.toFixed(2));
+}
 
 // Simple object drawing function
 function drawObject() {
@@ -156,28 +197,32 @@ function drawObject() {
 
 // realistic pick detection
 function isGripperNearObject() {
-    // TEMPORARY: Always return true when at pick position
-    if (Math.abs(theta[Base] - 0) < 5 && 
-        Math.abs(theta[LowerArm] - 75) < 5 && 
-        Math.abs(theta[UpperArm] - (-30)) < 5) {
-        console.log("At pick position - assuming object is reachable");
-        return true;
-    }
-    
-    // Original distance calculation (for when position is fixed)
+    // 1. Get the computed world position of the gripper center
     var g = getGripperWorldPosition();
     var gx = g[0];
     var gy = g[1];
     var gz = g[2];
     
+    // 2. Calculate the difference between gripper and object center
     var dx = gx - object.position.x;
     var dy = gy - object.position.y;
     var dz = gz - object.position.z;
 
+    // 3. Use the Pythagorean distance formula: sqrt(a^2 + b^2 + c^2)
     var dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
     
-    console.log("Distance to object:", dist.toFixed(2));
-    return dist < 2.0; // Increased tolerance
+    // 4. Set a realistic threshold. 
+    // Since the cube is 0.5 wide, a distance < 0.7 means the gripper 
+    // center is inside or very close to the cube.
+    var grabThreshold = 0.7; 
+
+    console.log(
+        "Distance to object:", dist.toFixed(2), 
+        "Threshold:", grabThreshold,
+        "Grip state:", (dist < grabThreshold ? "NEAR" : "FAR")
+    );
+
+    return dist < grabThreshold; 
 }
 
 // Check if arm is at target position
@@ -188,9 +233,39 @@ function isArmAtTarget() {
            Math.abs(theta[UpperArm] - targetTheta[UpperArm]) < tolerance;
 }
 
+// Try to grip the object if gripper is closed and near it
+function tryGripObject() {
+    if (object.isPicked) return;
+
+    if (isGripperNearObject() && grip.open < (grip.min + 0.05)) {
+        object.isPicked = true;
+        motionStatus("Object gripped");
+    }
+}
+
+// Try to release the object if gripper is open
+function tryReleaseObject() {
+    if (!object.isPicked) return;
+
+    if (grip.open > (grip.max - 0.05)) {
+        object.isPicked = false;
+
+        var dropPos = getGripperWorldPosition();
+        object.position.x = dropPos[0];
+        object.position.y = dropPos[1];
+        object.position.z = dropPos[2];
+
+        motionStatus("Object released");
+    }
+}
+
+
 
 // Function to draw a colored cube
 function drawColoredCube(color) {
+
+
+
     // Create cube vertices
     var cubeVertices = [
         // Front face
@@ -272,15 +347,18 @@ function drawColoredCube(color) {
     // Restore original buffers
     gl.bindBuffer(gl.ARRAY_BUFFER, vBuffer);
     gl.vertexAttribPointer(positionLoc, 4, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(positionLoc);
     
     gl.bindBuffer(gl.ARRAY_BUFFER, cBuffer);
     gl.vertexAttribPointer(colorLoc, 4, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(colorLoc);
     
     // Restore original buffer binding if it existed
     if (originalVBuffer) {
         gl.bindBuffer(gl.ARRAY_BUFFER, originalVBuffer);
     }
 }
+
 
 var step = 10;
 var smoothSpeed = 0.15;
@@ -522,10 +600,9 @@ function addTargetAngle(jointIndex, deltaDeg) {
 
 // Smoothly move current theta toward targetTheta
 function updateSmoothAngles() {
-    // joints
+    // 1. Handle joint rotations (Base, Lower, Upper)
     for (var i = 0; i < 3; i++) {
         var diff = targetTheta[i] - theta[i];
-
         if (Math.abs(diff) < 0.05) {
             theta[i] = targetTheta[i]; // snap to target
         } else {
@@ -533,15 +610,52 @@ function updateSmoothAngles() {
         }
     }
 
-    // gripper
-    var gdiff = grip.targetOpen - grip.open;
+    // 2. Handle Gripper Closing Logic
+    var finalTargetGrip = grip.targetOpen;
+    var objectWidth = object.size.width; // 0.5
+
+    // If the object is manually attached (Key 6) or near, stop fingers at 0.5
+    if (object.isPicked || isGripperNearObject()) {
+        if (finalTargetGrip < objectWidth) {
+            finalTargetGrip = objectWidth; 
+        }
+    }
+
+    var gdiff = finalTargetGrip - grip.open;
     if (Math.abs(gdiff) < 0.005) {
-        grip.open = grip.targetOpen;
+        grip.open = finalTargetGrip;
     } else {
         grip.open += gdiff * (grip.smoothSpeed * speedMult);
     }
+    
+    syncSliders(finalTargetGrip);
+}
 
-    // keep sliders synced
+/**
+ * Shared logic to detach the object and place it at the gripper's current world position.
+ */
+function performManualRelease() {
+    if (!object.isPicked) return;
+
+    object.isPicked = false;
+    manualControlActive = false; 
+
+    // Capture the absolute current world position of the gripper
+    var dropPos = getGripperWorldPosition();
+    object.position.x = dropPos[0];
+    object.position.y = dropPos[1];
+    object.position.z = dropPos[2];
+
+    if (gripperAutomation) {
+        gripperAutomation.gripState.holdingObject = false;
+    }
+
+    motionStatus("Object Released: Dropped at current gripper position.");
+    console.log("Release Position:", object.position);
+}
+
+// Helper to keep the UI in sync
+function syncSliders(currentGripTarget) {
     var s1 = document.getElementById("slider1");
     var s2 = document.getElementById("slider2");
     var s3 = document.getElementById("slider3");
@@ -551,7 +665,7 @@ function updateSmoothAngles() {
     if (s2) s2.value = Math.round(targetTheta[LowerArm]);
     if (s3) s3.value = Math.round(targetTheta[UpperArm]);
     if (s4) {
-        var pct = ((grip.targetOpen - grip.min) / (grip.max - grip.min)) * 100;
+        var pct = ((currentGripTarget - grip.min) / (grip.max - grip.min)) * 100;
         s4.value = clamp(pct, 0, 100);
     }
 }
@@ -668,7 +782,7 @@ function init() {
             console.error("Could not find modelViewMatrix uniform");
         }
 
-        projectionMatrix = ortho(-10, 10, -10, 10, -10, 10);
+        projectionMatrix = perspective(45, canvas.width / canvas.height, 0.1, 100.0);
         var projectionMatrixLoc = gl.getUniformLocation(program, "projectionMatrix");
         if (projectionMatrixLoc) {
             gl.uniformMatrix4fv(projectionMatrixLoc, false, flatten(projectionMatrix));
@@ -677,7 +791,7 @@ function init() {
         // Initialize modelViewMatrix
         modelViewMatrix = mat4();
         
-        setInitialPose(75, 35, 90, 0.55);
+        setInitialPose(45, 15, 115, 0.55);
         motionStatus("Robot Arm Initialized");
         
         // Initialize automation with proper arm controls
@@ -742,8 +856,21 @@ function init() {
                 case "r": addTargetAngle(UpperArm, -armStep); break;
 
                 // Gripper
-                case "o": addGripTarget(+gStep); motionStatus("Grip opening"); break;
-                case "p": addGripTarget(-gStep); motionStatus("Grip closing"); break;
+                case "o": 
+                addGripTarget(+gStep); 
+                motionStatus("Grip opening");
+                // If opening while holding, check if we should drop (Auto-release logic)
+                if (object.isPicked && grip.targetOpen > grip.max * 0.7) {
+                    performManualRelease();
+                }
+                break;
+            case "p": 
+                // Only allow manual closing if NOT holding (prevents clipping)
+                if (!object.isPicked) {
+                    addGripTarget(-gStep); 
+                    motionStatus("Grip closing");
+                }
+                break;
 
                 // Record/Playback
                 case "g": toggleRecordMode(); break;
@@ -776,28 +903,36 @@ function init() {
                 case "3": // Reset arm
                     if (gripperAutomation) gripperAutomation.resetArm();
                     break;
-                case "4": // Open gripper
-                    if (gripperAutomation) gripperAutomation.openGripper();
-                    break;
-                case "5": // Close gripper
-                    if (gripperAutomation) gripperAutomation.closeGripper();
-                    break;
-                case "6":
-                    if (!object.isPicked) {
-                        // Manual pick
-                        object.isPicked = true;
-                        if (gripperAutomation) gripperAutomation.gripState.holdingObject = false; // prevent automation
-                        motionStatus("Manual pick: attached to gripper");
-                    } else {
-                        // Manual release
-                        object.isPicked = false;
-                        var dropPos = getGripperWorldPosition();
-                        object.position.x = dropPos[0];
-                        object.position.y = dropPos[1];
-                        object.position.z = dropPos[2];
-                        motionStatus("Manual release: dropped at gripper position");
-                    }
-                    break;
+                case "4": // SMART PICK
+                if (!object.isPicked && isGripperNearObject()) {
+                    object.isPicked = true;
+                    manualControlActive = true;
+                    if (gripperAutomation) gripperAutomation.gripState.holdingObject = true;
+                    motionStatus("Smart Pick: Object attached.");
+                }
+                break;
+            case "5": // SMART RELEASE / CLOSE
+                if (object.isPicked) {
+                    performManualRelease();
+                } else {
+                    // Original case 5 functionality: close gripper if empty
+                    grip.targetOpen -= 0.05;
+                    if (grip.targetOpen < grip.min) grip.targetOpen = grip.min;
+                    motionStatus("Closing gripper...");
+                }
+                break;
+
+            // --- KEY 6 UPDATED TO USE HELPER ---
+            case "6":
+                if (!object.isPicked) {
+                    object.isPicked = true;
+                    manualControlActive = true;
+                    if (gripperAutomation) gripperAutomation.gripState.holdingObject = true;
+                    motionStatus("Manual Grip: Object locked.");
+                } else {
+                    // performManualRelease();
+                }
+                break;
             }
         });
         
@@ -812,29 +947,18 @@ function init() {
 //----------------------------------------------------------------------------
 
 function base() {
-  // Main base body
-  var mainS = scale(BASE_WIDTH, BASE_HEIGHT, BASE_WIDTH);
-  var mainM = mult(translate(0.0, 0.5 * BASE_HEIGHT, 0.0), mainS);
-  drawCubeWithMatrix(mainM);
+    var BASE_SIZE = 3.0;
 
-  // Bevel parameters
-  var bevelH = 0.25 * BASE_HEIGHT;
-  var bevelScale = 0.88;
+    var saved = modelViewMatrix;
 
-  // Top bevel
-  var topS = scale(BASE_WIDTH * bevelScale, bevelH, BASE_WIDTH * bevelScale);
-  var topM = mat4();
-  topM = mult(topM, translate(0.0, BASE_HEIGHT - 0.5 * bevelH, 0.0));
-  topM = mult(topM, topS);
-  drawCubeWithMatrix(topM);
+    modelViewMatrix = mult(modelViewMatrix, translate(0.0, 0.5 * BASE_SIZE, 0.0));
+    modelViewMatrix = mult(modelViewMatrix, scale(BASE_SIZE, BASE_SIZE, BASE_SIZE));
 
-  // Bottom bevel
-  var botS = scale(BASE_WIDTH * bevelScale, bevelH, BASE_WIDTH * bevelScale);
-  var botM = mat4();
-  botM = mult(botM, translate(0.0, 0.5 * bevelH, 0.0));
-  botM = mult(botM, botS);
-  drawCubeWithMatrix(botM);
+   drawColoredCube(vec4(0.2, 0.2, 0.8, 1.0)); // grey cube base
+
+    modelViewMatrix = saved;
 }
+
 
 function upperArm() {
     var s = scale(UPPER_ARM_WIDTH, UPPER_ARM_HEIGHT, UPPER_ARM_WIDTH);
@@ -859,157 +983,148 @@ function drawCubeWithMatrix(instanceMatrix) {
 }
 
 function gripper() {
-  // Attach at end of upper arm
-  var saved = modelViewMatrix;
-  modelViewMatrix = mult(modelViewMatrix, translate(0.0, UPPER_ARM_HEIGHT, 0.0));
-  modelViewMatrix = mult(modelViewMatrix, rotate(-90, vec3(0, 1, 0)));
-  
-  // Palm block
-  var PALM_W = 1.0;
-  var PALM_H = 0.35;
-  var PALM_D = 0.55;
+    // Attach at end of upper arm
+    var saved = modelViewMatrix;
+    modelViewMatrix = mult(modelViewMatrix, translate(0.0, UPPER_ARM_HEIGHT - 0.2, 0.0));
+    modelViewMatrix = mult(modelViewMatrix, rotate(-90, vec3(0, 1, 0)));
 
-  {
-    var sPalm = scale(PALM_W, PALM_H, PALM_D);
-    var palmM = mult(translate(0.0, 0.5 * PALM_H, 0.0), sPalm);
-    drawCubeWithMatrix(palmM);
-  }
-
-  // Finger parameters
-  var F_W = 0.16;
-  var F_D = 0.16;
-  var F1_L = 0.85;
-  var F2_L = 0.65;
-
-  var GAP = grip.open;
-  var BASE_Y = PALM_H;
-  var OUT_ANGLE = 10;
-  var IN_ANGLE  = 25;
-
-  // helper to draw one finger
-  function finger(side) {
-    var fingerBase = mat4();
-    fingerBase = mult(fingerBase, translate(side * (GAP * 0.5), BASE_Y, 0.0));
-    var baseRot = rotate(side * OUT_ANGLE, vec3(0, 0, 1));
-    var baseSeg = mat4();
-    baseSeg = mult(baseSeg, fingerBase);
-    baseSeg = mult(baseSeg, baseRot);
-
-    // Base segment
-    {
-      var s1 = scale(F_W, F1_L, F_D);
-      var m1 = mult(baseSeg, translate(0.0, 0.5 * F1_L, 0.0));
-      m1 = mult(m1, s1);
-      drawCubeWithMatrix(m1);
-    }
-
-    // Tip segment
-    var tipSeg = mat4();
-    tipSeg = mult(tipSeg, baseSeg);
-    tipSeg = mult(tipSeg, translate(0.0, F1_L, 0.0));
-    tipSeg = mult(tipSeg, rotate(-side * IN_ANGLE, vec3(0, 0, 1)));
+    // =========================
+    // PALM (smaller)
+    // =========================
+    var PALM_W = 0.6;
+    var PALM_H = 0.25;
+    var PALM_D = 0.35;
+    var palmColor = vec4(0.5, 0.5, 0.5, 1.0);
 
     {
-      var s2 = scale(F_W, F2_L, F_D);
-      var m2 = mult(tipSeg, translate(0.0, 0.5 * F2_L, 0.0));
-      m2 = mult(m2, s2);
-      drawCubeWithMatrix(m2);
+        var saved_palm = modelViewMatrix;
+        modelViewMatrix = mult(modelViewMatrix, translate(0.0, 0.5 * PALM_H, 0.0));
+        modelViewMatrix = mult(modelViewMatrix, scale(PALM_W, PALM_H, PALM_D));
+        drawColoredCube(palmColor);
+        modelViewMatrix = saved_palm;
     }
-  }
 
-  // draw both fingers
-  finger(-1);
-  finger(+1);
+    // =========================
+    // FINGERS (smaller + shorter)
+    // =========================
+    var F_W = 0.1;
+    var F_D = 0.1;
+    var F1_L = 0.5;
+    var F2_L = 0.35;
+    var fingerColor = vec4(0.7, 0.7, 0.7, 1.0);
 
-  if (object.isPicked) {
-    var saved2 = modelViewMatrix;
+    var GAP = grip.open * 0.7;   // slightly reduce gap range
+    var BASE_Y = PALM_H;
+    var OUT_ANGLE = 8;
+    var IN_ANGLE  = 18;
 
-    // Move to center between fingers
-    modelViewMatrix = mult(modelViewMatrix, translate(0.0, 0.8, 0.1));
+    function finger(side) {
+        var fingerBase = mat4();
+        fingerBase = mult(fingerBase, translate(side * (GAP * 0.5), BASE_Y, 0.0));
 
-    modelViewMatrix = mult(modelViewMatrix, scale(
-        object.size.width,
-        object.size.height,
-        object.size.depth
-    ));
+        var baseRot = rotate(side * OUT_ANGLE, vec3(0, 0, 1));
 
-    drawColoredCube(getObjectColorVec());
+        var baseSeg = mat4();
+        baseSeg = mult(baseSeg, fingerBase);
+        baseSeg = mult(baseSeg, baseRot);
 
-    modelViewMatrix = saved2;
-  }
+        // ---- Base segment ----
+        {
+            var saved_seg = modelViewMatrix;
+            modelViewMatrix = mult(modelViewMatrix, baseSeg);
+            modelViewMatrix = mult(modelViewMatrix, translate(0.0, 0.5 * F1_L, 0.0));
+            modelViewMatrix = mult(modelViewMatrix, scale(F_W, F1_L, F_D));
+            drawColoredCube(fingerColor);
+            modelViewMatrix = saved_seg;
+        }
 
-  modelViewMatrix = saved;
+        // ---- Tip segment ----
+        var tipSeg = mat4();
+        tipSeg = mult(tipSeg, baseSeg);
+        tipSeg = mult(tipSeg, translate(0.0, F1_L, 0.0));
+        tipSeg = mult(tipSeg, rotate(-side * IN_ANGLE, vec3(0, 0, 1)));
+
+        {
+            var saved_tip = modelViewMatrix;
+            modelViewMatrix = mult(modelViewMatrix, tipSeg);
+            modelViewMatrix = mult(modelViewMatrix, translate(0.0, 0.5 * F2_L, 0.0));
+            modelViewMatrix = mult(modelViewMatrix, scale(F_W, F2_L, F_D));
+            drawColoredCube(fingerColor);
+            modelViewMatrix = saved_tip;
+        }
+    }
+
+    // draw both fingers
+    finger(-1);
+    finger(+1);
+
+    // =========================
+    // HELD OBJECT
+    // =========================
+    if (object.isPicked) {
+        var saved2 = modelViewMatrix;
+
+        modelViewMatrix = mult(modelViewMatrix, translate(0.0, 0.45, 0.0));
+        modelViewMatrix = mult(modelViewMatrix, scale(
+            object.size.width,
+            object.size.height,
+            object.size.depth
+        ));
+
+        drawColoredCube(getObjectColorVec());
+        modelViewMatrix = saved2;
+    }
+
+    modelViewMatrix = saved;
 }
 
+// Update the render function to use this
 function render() {
-    try {
-        // Clear the canvas
-        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-        // Update playback if needed
-        updatePlayback();
+    updatePlayback();
+    updateSmoothAngles();
+    
+    // Check for grip/release (replace tryGripObject/tryReleaseObject)
+    checkGripObject();
 
-        // Smoothly update joint angles and gripper
-        updateSmoothAngles();
-
-        // Update automation steps (pick/place)
-        if (gripperAutomation) {
-            gripperAutomation.update();
-        }
-
-        // Initialize modelViewMatrix if not already done
-        if (!modelViewMatrix) {
-            modelViewMatrix = mat4();
-        }
-
-        // Save current matrix for object drawing
-        var originalMatrix = modelViewMatrix;
-
-        // -------------------------
-        // DRAW OBJECT FIRST (world space)
-        // -------------------------
-        drawObject();
-
-        // Reset modelViewMatrix for robot arm
-        modelViewMatrix = mat4();
-
-        // -------------------------
-        // DRAW ROBOT ARM
-        // -------------------------
-
-        // Base rotation
-        modelViewMatrix = rotate(theta[Base], vec3(0, 1, 0));
-        base();
-
-        // Lower arm
-        modelViewMatrix = mult(modelViewMatrix, translate(0.0, BASE_HEIGHT, 0.0));
-        modelViewMatrix = mult(modelViewMatrix, rotate(theta[LowerArm], vec3(0, 0, 1)));
-        lowerArm();
-
-        // Upper arm
-        modelViewMatrix = mult(modelViewMatrix, translate(0.0, LOWER_ARM_HEIGHT, 0.0));
-        modelViewMatrix = mult(modelViewMatrix, rotate(theta[UpperArm], vec3(0, 0, 1)));
-        upperArm();
-
-        // Gripper
-        gripper();
-
-        // -------------------------
-        // Restore original matrix
-        // -------------------------
-        modelViewMatrix = originalMatrix;
-
-        // Continue animation loop
-        requestAnimationFrame(render);
-
-    } catch (error) {
-        console.error("Error in render:", error);
-
-        // Attempt to recover
-        modelViewMatrix = mat4();
-        motionStatus("Render error: " + error.message);
-
-        // Continue rendering even after error
-        requestAnimationFrame(render);
+    if (gripperAutomation) {
+        gripperAutomation.update();
     }
+
+    // Camera setup
+    var view = lookAt(
+        vec3(0, 8, 20),
+        vec3(0, 5, 0),
+        vec3(0, 1, 0)
+    );
+
+    modelViewMatrix = view;
+
+    // Draw object (if not being held)
+    if (!object.isPicked) {
+        drawObject();
+    }
+
+    // Draw robot arm
+    modelViewMatrix = view;
+
+    // Base rotation
+    modelViewMatrix = mult(modelViewMatrix, rotate(theta[Base], vec3(0, 1, 0)));
+    base();
+
+    // Lower arm
+    modelViewMatrix = mult(modelViewMatrix, translate(0.0, BASE_HEIGHT, 0.0));
+    modelViewMatrix = mult(modelViewMatrix, rotate(theta[LowerArm], vec3(0, 0, 1)));
+    lowerArm();
+
+    // Upper arm
+    modelViewMatrix = mult(modelViewMatrix, translate(0.0, LOWER_ARM_HEIGHT, 0.0));
+    modelViewMatrix = mult(modelViewMatrix, rotate(theta[UpperArm], vec3(0, 0, 1)));
+    upperArm();
+
+    // Gripper (will draw object if held)
+    gripper();
+
+    requestAnimationFrame(render);
 }

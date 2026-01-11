@@ -62,7 +62,7 @@ GripperAutomation.prototype.definePickAndPlaceRoutine = function() {
         { type: "release", desc: "Releasing object" },
 
         // 8. Return home
-        { type: "move", target: { base: 75, lower: 35, upper: 90 }, desc: "Returning home" }
+        { type: "move", target: { base: 45, lower: 15, upper: 115 }, desc: "Returning home" }
     ];
 };
 
@@ -104,9 +104,9 @@ GripperAutomation.prototype.stopAutomation = function() {
 
 GripperAutomation.prototype.resetArm = function() {
     this.stopAutomation();
-    this.arm.setTargetAngle(this.arm.Base, 75);
-    this.arm.setTargetAngle(this.arm.LowerArm, 35);
-    this.arm.setTargetAngle(this.arm.UpperArm, 90);
+    this.arm.setTargetAngle(this.arm.Base, 45);
+    this.arm.setTargetAngle(this.arm.LowerArm, 15);
+    this.arm.setTargetAngle(this.arm.UpperArm, 115);
     this.openGripper();
     this.gripState.holdingObject = false;
 
