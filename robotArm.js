@@ -903,7 +903,7 @@ function init() {
                 case "3": // Reset arm
                     if (gripperAutomation) gripperAutomation.resetArm();
                     break;
-                case "4": // SMART PICK
+                case "4": // SMART PICK OBJECT - NEAR 
                 if (!object.isPicked && isGripperNearObject()) {
                     object.isPicked = true;
                     manualControlActive = true;
@@ -911,26 +911,12 @@ function init() {
                     motionStatus("Smart Pick: Object attached.");
                 }
                 break;
-            case "5": // SMART RELEASE / CLOSE
-                if (object.isPicked) {
-                    performManualRelease();
-                } else {
-                    // Original case 5 functionality: close gripper if empty
-                    grip.targetOpen -= 0.05;
-                    if (grip.targetOpen < grip.min) grip.targetOpen = grip.min;
-                    motionStatus("Closing gripper...");
-                }
-                break;
-
-            // --- KEY 6 UPDATED TO USE HELPER ---
-            case "6":
+            case "5": // PICK OBJECT ( FAR )
                 if (!object.isPicked) {
                     object.isPicked = true;
                     manualControlActive = true;
                     if (gripperAutomation) gripperAutomation.gripState.holdingObject = true;
                     motionStatus("Manual Grip: Object locked.");
-                } else {
-                    // performManualRelease();
                 }
                 break;
             }
