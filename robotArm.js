@@ -66,6 +66,12 @@ var placePosition = {
     z: 0.0
 };
 
+// Speed control
+var speedMult = 1.0;
+var SPEED_MIN = 0.25;
+var SPEED_MAX = 3.0;
+var speedDisplay = null;
+
 // Helper function to get object color
 function getObjectColorVec() {
     return vec4(
@@ -454,6 +460,15 @@ function clamp(val, min, max) {
   return Math.max(min, Math.min(max, val));
 }
 
+function setSpeedMultiplier(newVal) {
+    speedMult = clamp(newVal, SPEED_MIN, SPEED_MAX);
+    motionStatus("Speed multiplier = " + speedMult.toFixed(2) + "x");
+
+    if (speedDisplay){
+        speedDisplay.textContent = speedMult.toFixed(2) + "x";
+    }
+}
+
 function nameOfJoint(j) {
   if (j === Base) return "Base";
   if (j === LowerArm) return "Lower Arm";
@@ -615,7 +630,7 @@ function updateSmoothAngles() {
     var objectWidth = object.size.width; // 0.5
 
     // If the object is manually attached (Key 6) or near, stop fingers at 0.5
-    if (object.isPicked || isGripperNearObject()) {
+    if (!manualControlActive && (object.isPicked || isGripperNearObject())) {
         if (finalTargetGrip < objectWidth) {
             finalTargetGrip = objectWidth; 
         }
@@ -672,9 +687,14 @@ function syncSliders(currentGripTarget) {
 
 // Feedback ownership (console + optional HTML element)
 function motionStatus(msg) {
-  var line = msg + " | Base: " + theta[Base].toFixed(1) + "° Lower: " + 
-            theta[LowerArm].toFixed(1) + "° Upper: " + theta[UpperArm].toFixed(1) + "°";
-
+    var gripPercent = Math.round(((grip.open - grip.min) / (grip.max - grip.min)) * 100);
+    // Build feedback string
+     var line = msg + "\n" +
+                "Base: " + theta[Base].toFixed(1) + "° \n" +
+               "Lower Arm: " + theta[LowerArm].toFixed(1) + "° \n" +
+                "Upper Arm: " + theta[UpperArm].toFixed(1) + "° \n" +
+                "Gripper: " + gripPercent + "% \n" +
+                "Speed: " + speedMult.toFixed(2) + "x \n";
   console.log("[Motion]", line);
 
   var el = document.getElementById("status");
@@ -764,16 +784,20 @@ function init() {
         var slider3 = document.getElementById("slider3");
         var slider4 = document.getElementById("slider4");
         
-        if (slider1) slider1.onchange = function(event) {
-            setTargetAngle(Base, Number(event.target.value)*MOTION_SCALE);
+        if (slider1) slider1.oninput = function(event) {
+            manualControlActive = true;
+            setTargetAngle(Base, Number(event.target.value));
         };
-        if (slider2) slider2.onchange = function(event) {
-            setTargetAngle(LowerArm, Number(event.target.value)*MOTION_SCALE);
+        if (slider2) slider2.oninput = function(event) {
+            manualControlActive = true;
+            setTargetAngle(LowerArm, Number(event.target.value));
         };
-        if (slider3) slider3.onchange = function(event) {
-            setTargetAngle(UpperArm, Number(event.target.value)*MOTION_SCALE);
+        if (slider3) slider3.oninput = function(event) {
+            manualControlActive = true;
+            setTargetAngle(UpperArm, Number(event.target.value));
         };
-        if (slider4) slider4.onchange = function(event) {
+        if (slider4) slider4.oninput = function(event) {
+            manualControlActive = true;
             setGripperTargetByPercent(Number(event.target.value));
         };
 
@@ -924,6 +948,19 @@ function init() {
         
         console.log("Robot arm initialized successfully");
         
+        var speedDisplay = document.getElementById("speed-display");
+
+        document.getElementById("speed-increase").onclick = function() {
+            setSpeedMultiplier(speedMult + 0.25);
+            if(speedDisplay) speedDisplay.textContent = `Speed: ${speedMult.toFixed(2)}x`;
+        };
+
+        document.getElementById("speed-decrease").onclick = function() {
+            setSpeedMultiplier(speedMult - 0.25);
+            if(speedDisplay) speedDisplay.textContent = `Speed: ${speedMult.toFixed(2)}x`;
+        };
+
+
     } catch (error) {
         console.error("Error in init:", error);
         motionStatus("Initialization error: " + error.message);

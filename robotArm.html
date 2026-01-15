@@ -112,6 +112,7 @@
       font-size: 14px;
       min-height: 40px;
       border-left: 4px solid #3498db;
+      white-space: pre-line;
     }
     
     #gl-canvas {
@@ -237,6 +238,12 @@
               ⇶ Close Gripper
             </button>
           </div>
+
+          <div id="speed-controls">
+            <button id="speed-decrease">- Slow Down</button>
+            <button id="speed-increase">+ Speed Up</button>
+            </div>
+
           
           <div class="automation-status">
             <p><strong>Automation State:</strong> <span id="auto-state" data-state="idle">Idle</span></p>
@@ -354,21 +361,6 @@
           Initializing robotic arm...
         </div>
         
-        <div style="margin-top: 15px;">
-          <h4>Current Positions:</h4>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-            <div>
-              <p><strong>Base:</strong> <span id="current-base">0°</span></p>
-              <p><strong>Lower Arm:</strong> <span id="current-lower">35°</span></p>
-              <p><strong>Upper Arm:</strong> <span id="current-upper">45°</span></p>
-            </div>
-            <div>
-              <p><strong>Gripper:</strong> <span id="current-grip">55%</span></p>
-              <p><strong>Speed:</strong> <span id="current-speed">1.0x</span></p>
-              <p><strong>Mode:</strong> <span id="current-mode">Normal</span></p>
-            </div>
-          </div>
-        </div>
       </section>
 
       <!-- Viewport -->
