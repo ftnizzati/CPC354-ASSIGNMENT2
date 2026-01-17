@@ -100,6 +100,16 @@ GripperAutomation.prototype.stopAutomation = function() {
     this.automation.active = false;
     this.automation.state = "idle";
     this.arm.motionStatus("Automation stopped");
+
+    // ✅ Save the current pose before restoring
+    if (typeof this.arm.savePose === "function") {
+        this.arm.savePose();
+    }
+
+    // ✅ Restore last saved manual pose
+    if (typeof this.arm.restoreLastPose === "function") {
+        this.arm.restoreLastPose();
+    }
 };
 
 GripperAutomation.prototype.resetArm = function() {
@@ -126,10 +136,14 @@ GripperAutomation.prototype.executeNextStep = function() {
     if (!this.automation.active) return;
 
     if (this.automation.step >= this.automation.routineSteps.length) {
-        this.automation.active = false;
-        this.automation.state = "idle";
-        this.arm.motionStatus("=== PICK & PLACE COMPLETED ===");
-        return;
+    this.automation.active = false;
+    this.automation.state = "idle";
+    this.arm.motionStatus("=== PICK & PLACE COMPLETED ===");
+
+    if (typeof this.arm.savePose === "function") this.arm.savePose();
+    if (typeof this.arm.restoreLastPose === "function") this.arm.restoreLastPose();
+
+    return;
     }
 
     var step = this.automation.routineSteps[this.automation.step];
