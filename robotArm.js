@@ -17,7 +17,7 @@ var UPPER_ARM_HEIGHT = 5.0;
 var UPPER_ARM_WIDTH  = 0.5;
 var manualControlActive = false; // Add this to track manual vs auto control
 // Shader transformation matrices
-var modelViewMatrix, projectionMatrix;
+var modelViewMatrix, projectionMatrix, projectionMatrixLoc;
 
 // Array of rotation angles (in degrees) for each rotation axis
 var Base = 0;
@@ -71,6 +71,19 @@ var speedMult = 1.0;
 var SPEED_MIN = 0.25;
 var SPEED_MAX = 3.0;
 var speedDisplay = null;
+
+function resizeCanvasToDisplaySize(canvas, gl) {
+  const width  = canvas.clientWidth;
+  const height = canvas.clientHeight;
+
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width  = width;
+    canvas.height = height;
+    gl.viewport(0, 0, width, height);
+    return true;
+  }
+  return false;
+}
 
 // Helper function to get object color
 function getObjectColorVec() {
@@ -379,7 +392,6 @@ var gripStepNormal = 0.08;
 var gripStepPrec   = 0.02;
 
 // Speed scaling (+ / -)
-var speedMult = 1.0;
 var SPEED_MIN = 0.25;
 var SPEED_MAX = 3.0;
 
@@ -390,6 +402,7 @@ var savedPoses = [];
 var playIndex = 0;
 var playHoldFrames = 10;
 var playHoldCounter = 0;
+var lastPose = null;
 
 // Joint angle limits
 var LIMITS = {
@@ -519,11 +532,25 @@ function addGripTarget(delta) {
 }
 
 function savePose() {
-  savedPoses.push({
-    theta: [targetTheta[Base], targetTheta[LowerArm], targetTheta[UpperArm]],
-    grip: grip.targetOpen
-  });
-  motionStatus("Saved pose #" + savedPoses.length);
+  lastPose = {
+        theta: [
+            targetTheta[Base],
+            targetTheta[LowerArm],
+            targetTheta[UpperArm]
+        ],
+        grip: grip.targetOpen,
+        objectPicked: object.isPicked,
+        objectPos: object.position
+            ? { x: object.position.x, y: object.position.y, z: object.position.z }
+            : null
+    };
+
+    savedPoses.push(JSON.parse(JSON.stringify(lastPose)));
+
+    motionStatus(
+        "Saved pose #" + savedPoses.length +
+        " (Last pose updated)"
+    );
 }
 
 function applyPose(pose) {
@@ -531,6 +558,33 @@ function applyPose(pose) {
   setTargetAngle(LowerArm, pose.theta[1]);
   setTargetAngle(UpperArm, pose.theta[2]);
   setGripTarget(pose.grip);
+}
+
+function restoreLastPose() {
+    if (!lastPose) {
+        motionStatus("No last pose to restore");
+        return;
+    }
+
+    // Restore joints
+    setTargetAngle(Base, lastPose.theta[0]);
+    setTargetAngle(LowerArm, lastPose.theta[1]);
+    setTargetAngle(UpperArm, lastPose.theta[2]);
+
+    // Restore gripper
+    setGripTarget(lastPose.grip);
+
+    // Restore object
+    object.isPicked = lastPose.objectPicked;
+    manualControlActive = lastPose.objectPicked;
+
+    if (!object.isPicked && lastPose.objectPos) {
+        object.position.x = lastPose.objectPos.x;
+        object.position.y = lastPose.objectPos.y;
+        object.position.z = lastPose.objectPos.z;
+    }
+
+    motionStatus("Restored last saved pose");
 }
 
 function toggleRecordMode() {
@@ -553,6 +607,8 @@ function startPlayMode() {
 function stopPlayMode() {
   playMode = false;
   motionStatus("Play Mode: OFF");
+
+  restoreLastPose();
 }
 
 function updatePlayback() {
@@ -701,6 +757,7 @@ function motionStatus(msg) {
   if (el) el.textContent = line;
 }
 
+
 function setInitialPose(baseDeg, lowerDeg, upperDeg, gripGap) {
   theta[Base] = targetTheta[Base] = baseDeg;
   theta[LowerArm] = targetTheta[LowerArm] = lowerDeg;
@@ -787,18 +844,22 @@ function init() {
         if (slider1) slider1.oninput = function(event) {
             manualControlActive = true;
             setTargetAngle(Base, Number(event.target.value));
+            savePose();
         };
         if (slider2) slider2.oninput = function(event) {
             manualControlActive = true;
             setTargetAngle(LowerArm, Number(event.target.value));
+            savePose();
         };
         if (slider3) slider3.oninput = function(event) {
             manualControlActive = true;
             setTargetAngle(UpperArm, Number(event.target.value));
+            savePose();
         };
         if (slider4) slider4.oninput = function(event) {
             manualControlActive = true;
             setGripperTargetByPercent(Number(event.target.value));
+            savePose();
         };
 
         modelViewMatrixLoc = gl.getUniformLocation(program, "modelViewMatrix");
@@ -807,7 +868,7 @@ function init() {
         }
 
         projectionMatrix = perspective(45, canvas.width / canvas.height, 0.1, 100.0);
-        var projectionMatrixLoc = gl.getUniformLocation(program, "projectionMatrix");
+        projectionMatrixLoc = gl.getUniformLocation(program, "projectionMatrix");
         if (projectionMatrixLoc) {
             gl.uniformMatrix4fv(projectionMatrixLoc, false, flatten(projectionMatrix));
         }
@@ -833,7 +894,8 @@ function init() {
                 object: object,
                 placePosition: placePosition,
                 isArmAtTarget: isArmAtTarget,  // Added this function
-                getGripperWorldPosition: getGripperWorldPosition  // Added this function
+                getGripperWorldPosition: getGripperWorldPosition,  // Added this function
+                restoreLastPose: restoreLastPose
             };
 
             gripperAutomation = new GripperAutomation(armControls);
@@ -850,6 +912,8 @@ function init() {
         
         // Start rendering
         render();
+
+        savePose();
         
         // Keyboard event handler
         window.addEventListener("keydown", function (e) {
@@ -910,7 +974,12 @@ function init() {
                     if (playMode) stopPlayMode();
                     else startPlayMode();
                     break;
-
+                case "b":   // Restore last pose
+                if (gripperAutomation && gripperAutomation.automation.active) {
+                    gripperAutomation.stopAutomation();
+                }
+                restoreLastPose();
+                break;
                 // Speed control
                 case "+":
                 case "=": incSpeed(); break;
@@ -1103,6 +1172,9 @@ function gripper() {
 
 // Update the render function to use this
 function render() {
+    resizeCanvasToDisplaySize(canvas, gl);
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
     updatePlayback();
