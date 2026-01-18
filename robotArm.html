@@ -321,6 +321,7 @@
               <li><b>W / S</b> = Lower arm</li>
               <li><b>R / F</b> = Upper arm</li>
               <li><b>O / P</b> = Gripper open/close</li>
+              <li><b>O</b> = Place object down</li>
             </ul>
           </div>
           
@@ -330,9 +331,8 @@
               <li><b>1</b> = Start Automation</li>
               <li><b>2</b> = Stop Automation</li>
               <li><b>3</b> = Reset Arm</li>
-              <li><b>4</b> = Open Gripper</li>
-              <li><b>5</b> = Close Gripper</li>
-              <li><b>6</b> = Toggle Object Pick</li>
+              <li><b>4</b> = Smart Pick (near object)</li>
+              <li><b>5</b> = Force Pick (any distance)</li>
             </ul>
           </div>
           
@@ -515,18 +515,6 @@ void main()
       
     })();
     
-    // Global function for manual object pick toggle
-    function toggleObjectPick() {
-      if (typeof object !== 'undefined') {
-        object.isPicked = !object.isPicked;
-        if (object.isPicked) {
-          motionStatus("Manually picked object");
-        } else {
-          motionStatus("Manually released object");
-        }
-      }
-    }
-   
     // Function to update button states
   function updateAutomationButtons() {
   var startBtn = document.getElementById('start-auto-btn');

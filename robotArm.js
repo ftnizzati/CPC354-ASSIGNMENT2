@@ -126,27 +126,6 @@ function getGripperWorldPosition() {
     return [m[0][3], m[1][3], m[2][3]];
 }
 
-function isGripperAtBox() {
-    if (!object) return false;
-
-    const gPos = getGripperWorldPosition();
-    const bPos = object.position;
-
-    const dx = gPos[0] - bPos.x;
-    const dy = gPos[1] - bPos.y;
-    const dz = gPos[2] - bPos.z;
-
-    const distance = Math.sqrt(dx*dx + dy*dy + dz*dz);
-
-    console.log(
-        "Gripper-Box distance:", distance.toFixed(3),
-        "Gripper:", gPos.map(v => v.toFixed(2)),
-        "Box:", bPos.x.toFixed(2), bPos.y.toFixed(2), bPos.z.toFixed(2)
-    );
-
-    return distance < 0.6;   // IMPORTANT: increased tolerance
-}
-
 // Improved grip detection
 function checkGripObject() {
     // If the user is in manual mode (Key 6), do not allow 
@@ -169,26 +148,6 @@ function checkGripObject() {
             motionStatus("Auto-grip: Object picked");
         }
     }
-}
-
-// Debug function to show gripper status
-function debugGripperStatus() {
-    console.log("=== Gripper Debug ===");
-    console.log("Grip open value:", grip.open.toFixed(2));
-    console.log("Target open:", grip.targetOpen.toFixed(2));
-    console.log("Min:", grip.min.toFixed(2), "Max:", grip.max.toFixed(2));
-    console.log("Object is picked:", object.isPicked);
-    console.log("Object position:", object.position.x.toFixed(2), object.position.y.toFixed(2), object.position.z.toFixed(2));
-    
-    var gripperPos = getGripperWorldPosition();
-    console.log("Gripper position:", gripperPos[0].toFixed(2), gripperPos[1].toFixed(2), gripperPos[2].toFixed(2));
-    
-    var distance = Math.sqrt(
-        Math.pow(gripperPos[0] - object.position.x, 2) +
-        Math.pow(gripperPos[1] - object.position.y, 2) +
-        Math.pow(gripperPos[2] - object.position.z, 2)
-    );
-    console.log("Distance to object:", distance.toFixed(2));
 }
 
 // Simple object drawing function
@@ -251,34 +210,6 @@ function isArmAtTarget() {
            Math.abs(theta[LowerArm] - targetTheta[LowerArm]) < tolerance &&
            Math.abs(theta[UpperArm] - targetTheta[UpperArm]) < tolerance;
 }
-
-// Try to grip the object if gripper is closed and near it
-function tryGripObject() {
-    if (object.isPicked) return;
-
-    if (isGripperNearObject() && grip.open < (grip.min + 0.05)) {
-        object.isPicked = true;
-        motionStatus("Object gripped");
-    }
-}
-
-// Try to release the object if gripper is open
-function tryReleaseObject() {
-    if (!object.isPicked) return;
-
-    if (grip.open > (grip.max - 0.05)) {
-        object.isPicked = false;
-
-        var dropPos = getGripperWorldPosition();
-        object.position.x = dropPos[0];
-        object.position.y = dropPos[1];
-        object.position.z = dropPos[2];
-
-        motionStatus("Object released");
-    }
-}
-
-
 
 // Function to draw a colored cube
 function drawColoredCube(color) {
@@ -471,15 +402,6 @@ function buildCylinder(slices) {
 
 function clamp(val, min, max) {
   return Math.max(min, Math.min(max, val));
-}
-
-function setSpeedMultiplier(newVal) {
-    speedMult = clamp(newVal, SPEED_MIN, SPEED_MAX);
-    motionStatus("Speed multiplier = " + speedMult.toFixed(2) + "x");
-
-    if (speedDisplay){
-        speedDisplay.textContent = speedMult.toFixed(2) + "x";
-    }
 }
 
 function nameOfJoint(j) {
@@ -1180,7 +1102,7 @@ function render() {
     updatePlayback();
     updateSmoothAngles();
     
-    // Check for grip/release (replace tryGripObject/tryReleaseObject)
+    // Check for grip/release
     checkGripObject();
 
     if (gripperAutomation) {
